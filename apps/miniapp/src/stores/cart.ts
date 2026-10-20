@@ -22,6 +22,7 @@ function normalizeContext(context: CartContext): CartContext {
     reservation: context.orderType === 'PICKUP' || context.reservation === true || undefined,
   };
   if (context.orderType === 'DINE_IN') {
+    next.diningReservationId = next.reservation && /^\d+$/.test(context.diningReservationId || '') ? context.diningReservationId : undefined;
     next.tableToken = context.tableToken?.trim() || undefined;
     next.tableNo = context.tableNo?.trim() || undefined;
     next.tableName = context.tableName?.trim() || undefined;
@@ -56,6 +57,7 @@ function sameContext(a: CartContext | null, b: CartContext) {
   if (left.orderType !== 'DINE_IN') return true;
   return (
     (left.tableToken ?? '') === (right.tableToken ?? '')
+    && (left.diningReservationId ?? '') === (right.diningReservationId ?? '')
   );
 }
 
@@ -227,9 +229,14 @@ export const useCartStore = defineStore('cart', {
       });
       this.loading = true;
       try {
-        const nextCart = await this.fetchCartForContext(normalizedNext);
+        // Different bookings share the same remote no-table cart. Clear once
+        // after the existing switch confirmation, rather than restoring its old items.
+        const sameRemoteCart = previousContext.merchantId === normalizedNext.merchantId
+          && previousContext.orderType === 'DINE_IN' && normalizedNext.orderType === 'DINE_IN'
+          && !previousContext.tableToken && !normalizedNext.tableToken;
+        const nextCart = sameRemoteCart ? await clearCartApi(previousContext) : await this.fetchCartForContext(normalizedNext);
         persistContext(normalizedNext);
-        await clearCartApi(previousContext);
+        if (!sameRemoteCart) await clearCartApi(previousContext);
         this.context = normalizedNext;
         this.cart = nextCart;
         console.log('[cart] clearAndSwitchContext success', {

@@ -1,3 +1,4 @@
+import type { ArrivalStatus } from '@huayue-life/shared';
 import { request } from './http';
 import { API_BASE_URL } from './http';
 import { getToken } from '@/utils/storage';
@@ -15,7 +16,8 @@ export interface UserChatOrderSummary {
 }
 
 export interface UserChatConversation extends UserOrderChatConversation {
-  order: UserChatOrderSummary;
+  order?: UserChatOrderSummary | null;
+  reservation?: { id: string; reservationNo: string; status: ArrivalStatus; scheduledFor: string; createdAt: string } | null;
   merchant: {
     id: string;
     nameZh: string;
@@ -58,26 +60,32 @@ function buildListOrderChatMessagesData(query: ListOrderChatMessagesQuery) {
   return data;
 }
 
+function chatPath(key: string) {
+  return key.startsWith('reservation:')
+    ? `/reservations/${encodeURIComponent(key.slice('reservation:'.length))}/chat`
+    : `/orders/${encodeURIComponent(key)}/chat`;
+}
+
 export const getOrderChat = (orderId: string) =>
-  request<UserChatConversation>(`/orders/${orderId}/chat`);
+  request<UserChatConversation>(chatPath(orderId));
 
 export const listOrderChatMessages = (
   orderId: string,
   query: ListOrderChatMessagesQuery = {},
 ) =>
-  request<ListOrderChatMessagesResult>(`/orders/${orderId}/chat/messages`, {
+  request<ListOrderChatMessagesResult>(`${chatPath(orderId)}/messages`, {
     method: 'GET',
     data: buildListOrderChatMessagesData(query),
   });
 
 export const sendOrderChatMessage = (orderId: string, content: string) =>
-  request<OrderChatMessage>(`/orders/${orderId}/chat/messages`, {
+  request<OrderChatMessage>(`${chatPath(orderId)}/messages`, {
     method: 'POST',
     data: { content },
   });
 
 export const sendOrderChatLocation = (orderId: string, latitude: number, longitude: number) =>
-  request<OrderChatMessage>(`/orders/${orderId}/chat/messages`, {
+  request<OrderChatMessage>(`${chatPath(orderId)}/messages`, {
     method: 'POST',
     data: { messageType: 'LOCATION', latitude, longitude },
   });
@@ -87,7 +95,7 @@ export function sendOrderChatImage(orderId: string, filePath: string): Promise<O
   if (!token) return Promise.reject(new Error('请先登录'));
   return new Promise((resolve, reject) => {
     uni.uploadFile({
-      url: `${API_BASE_URL}/orders/${orderId}/chat/images`,
+      url: `${API_BASE_URL}${chatPath(orderId)}/images`,
       filePath,
       name: 'file',
       header: { Authorization: `Bearer ${token}` },
@@ -109,6 +117,6 @@ export function sendOrderChatImage(orderId: string, filePath: string): Promise<O
 }
 
 export const markOrderChatRead = (orderId: string) =>
-  request<UserChatConversation>(`/orders/${orderId}/chat/read`, {
+  request<UserChatConversation>(`${chatPath(orderId)}/read`, {
     method: 'POST',
   });

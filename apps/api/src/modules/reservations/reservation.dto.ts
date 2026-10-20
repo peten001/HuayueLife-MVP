@@ -44,6 +44,14 @@ export class ReservationParamsDto {
   id: string;
 }
 
+export class AddReservationDishesDto {
+  @IsNumberString({ no_symbols: true })
+  cartId: string;
+
+  @IsNumberString({ no_symbols: true })
+  expectedAmountVnd: string;
+}
+
 export class ReservationActionDto {
   @IsIn(['CONFIRM', 'CANCEL', 'NO_SHOW', 'SEAT', 'PROPOSE_TIME', 'ASSIGN_TABLE'])
   action: 'CONFIRM' | 'CANCEL' | 'NO_SHOW' | 'SEAT' | 'PROPOSE_TIME' | 'ASSIGN_TABLE';

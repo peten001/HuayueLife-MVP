@@ -58,8 +58,25 @@ describe('cashier chat store', () => {
 
     expect(store.getState('order-1').messages.map((item) => item.content)).toEqual(['new']);
     expect(store.getState('order-2').messages.map((item) => item.content)).toEqual(['other order']);
-    expect(store.getState('order-1').conversation?.order.id).toBe('order-1');
-    expect(store.getState('order-2').conversation?.order.id).toBe('order-2');
+    expect(store.getState('order-1').conversation?.order?.id).toBe('order-1');
+    expect(store.getState('order-2').conversation?.order?.id).toBe('order-2');
+  });
+
+  it('isolates reservation state from a numerically identical order and follows reservation status', async () => {
+    const booking = { ...conversation('31', '2'), order: null,
+      reservation: { id: '31', reservationNo: 'YY31', status: 'CONFIRMED' as const, scheduledFor: '2026-10-20T12:00:00Z', createdAt: '2026-10-20T08:00:00Z' } };
+    apiMocks.getMerchantOrderChat.mockResolvedValue(booking);
+    apiMocks.listMerchantOrderChatMessages.mockResolvedValue(messagePage([]));
+    const store = useChatStore();
+    store.setOrderStatus('31', 'ACCEPTED');
+    await store.activate('reservation:31', 'CONFIRMED');
+    expect(store.getState('reservation:31').orderStatus).toBe('CONFIRMED');
+    expect(store.getState('31').conversation).toBeNull();
+    expect(store.isReadOnly('reservation:31')).toBe(false);
+    store.setOrderStatus('reservation:31', 'NO_SHOW');
+    expect(store.isReadOnly('reservation:31')).toBe(true);
+    expect(await store.send('reservation:31', '结束后不能发')).toBeNull();
+    expect(store.isReadOnly('31')).toBe(false);
   });
 
   it('follows forward cursors and de-duplicates messages in server order', async () => {

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
+import { getDiningReservation } from '@/api/reservations';
+import { useAuthStore } from '@/stores/auth';
 import { getProduct } from '@/api/catalog';
 import {
   formatNumberCurrency,
@@ -34,6 +36,19 @@ onLoad(async (options) => {
   const tableToken = String(options?.tableToken ?? '');
   tableLabel.value = tableName || tableNo;
   try {
+    if (String(options?.orderType) === 'DINE_IN' && String(options?.reservation) === '1') {
+      const reservationId = String(options?.reservationId ?? '');
+      if (!/^\d+$/.test(reservationId)) {
+        uni.redirectTo({ url: `/pages/reservation/create?merchantId=${String(options?.merchantId ?? '')}&kind=DINE_IN` });
+        return;
+      }
+      await useAuthStore().ensureLogin();
+      const booking = await getDiningReservation(reservationId);
+      if (booking.status !== 'CONFIRMED' || booking.proposedScheduledFor || booking.merchant.id !== String(options?.merchantId ?? '')) {
+        uni.redirectTo({ url: `/pages/reservation/detail?id=${encodeURIComponent(reservationId)}` });
+        return;
+      }
+    }
     const loadedProduct = await getProduct(String(options?.id ?? ''), {
       tableToken,
     });
@@ -44,6 +59,7 @@ onLoad(async (options) => {
         : '',
       orderType: String(options?.orderType ?? 'PICKUP') as OrderType,
       reservation: String(options?.orderType ?? 'PICKUP') === 'PICKUP' || String(options?.reservation ?? '') === '1' || undefined,
+      diningReservationId: String(options?.reservationId ?? '') || undefined,
       tableToken: tableToken || undefined,
       tableNo: tableNo || undefined,
       tableName: tableName || undefined,

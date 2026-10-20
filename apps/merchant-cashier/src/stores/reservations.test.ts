@@ -48,6 +48,18 @@ describe('reservation store', () => {
     expect(store.pickupDue.map(item => item.id)).toEqual(['2']);
     expect(mocks.sound).toHaveBeenCalledWith(['1'], 'reservations:3');
   });
+  it('surfaces reservation unread alerts, keeps closed history and clears only the selected reservation', async () => {
+    const chat = { id: 'chat-1', status: 'ACTIVE' as const, merchantUnreadCount: 2, customerUnreadCount: 0 };
+    mocks.list.mockResolvedValue(response([row({ chatConversation: chat }), row({ id: '2', status: 'CANCELLED', chatConversation: { ...chat, id: 'chat-2', status: 'CLOSED' } }), row({ kind: 'PICKUP', chatConversation: chat })]));
+    const store = useReservationsStore(); await store.load();
+    expect(store.unread.map(item => item.id)).toEqual(['1', '2']);
+    expect(store.attentionCount).toBe(2);
+    store.updateChatSummary('1', { ...chat, merchantUnreadCount: 0 });
+    expect(store.unread.map(item => item.id)).toEqual(['2']);
+    expect(store.attentionCount).toBe(2); // the first still awaits confirmation
+    store.reset(); expect(store.unread).toEqual([]);
+  });
+
   it('discards responses after logout or switching merchants', async () => {
     const old = deferred<ReturnType<typeof response>>(); mocks.list.mockReturnValue(old.promise);
     const store = useReservationsStore(); const poll = store.load(); store.reset(); mocks.auth.merchant = { id: '8' };

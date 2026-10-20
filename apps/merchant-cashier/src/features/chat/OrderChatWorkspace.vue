@@ -7,6 +7,7 @@ import {
   ref,
   watch,
 } from 'vue';
+import { formatReservationTime, reservationText, type ArrivalReservation } from '@huayue-life/shared';
 import { X } from '@lucide/vue';
 import type { MerchantOrderChatConversation, MerchantOrder } from '@/types';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
@@ -18,7 +19,8 @@ import ChatLocationPreview from './ChatLocationPreview.vue';
 import ChatMessageList from './ChatMessageList.vue';
 
 const props = withDefaults(defineProps<{
-  order: MerchantOrder;
+  order?: MerchantOrder;
+  reservation?: ArrivalReservation;
   active?: boolean;
   compactContext?: boolean;
 }>(), {
@@ -31,6 +33,8 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale } = useI18n();
+const chatKey = computed(() => props.reservation ? `reservation:${props.reservation.id}` : props.order?.id ?? '');
+const contextStatus = computed(() => props.reservation?.status ?? props.order?.status ?? 'CANCELLED');
 const chatStore = useChatStore();
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
 const messageListRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
@@ -46,25 +50,26 @@ const composerFocused = ref(false);
 let observer: IntersectionObserver | undefined;
 let activeOrderId = '';
 
-const state = computed(() => chatStore.getState(props.order.id));
-const chatAvailable = computed(() => props.order.userId !== null);
+const state = computed(() => chatStore.getState(chatKey.value));
+const chatAvailable = computed(() => Boolean(props.reservation || (props.order && props.order.userId !== null)));
 const shouldActivate = computed(
   () => props.active && intersecting.value && chatAvailable.value,
 );
-const readOnly = computed(() => chatStore.isReadOnly(props.order.id));
+const readOnly = computed(() => chatStore.isReadOnly(chatKey.value));
 const customerName = computed(() =>
   state.value.conversation?.customer.nickname?.trim()
   || state.value.conversation?.customer.phone?.trim()
-  || props.order.contactName?.trim()
-  || props.order.contactPhone?.trim()
+  || props.reservation?.contactName?.trim()
+  || props.order?.contactName?.trim()
+  || props.order?.contactPhone?.trim()
   || t('cashier.chat.customer'),
 );
-const compactPickupCode = computed(() => pickupCode(props.order) || props.order.orderNo);
-const compactEstimate = computed(() => estimatedReadyAt(props.order));
-const compactDeliveryAddress = computed(() => props.order.deliveryAddress?.trim() || '');
+const compactPickupCode = computed(() => props.order ? pickupCode(props.order) || props.order.orderNo : props.reservation?.reservationNo ?? '');
+const compactEstimate = computed(() => props.order ? estimatedReadyAt(props.order) : null);
+const compactDeliveryAddress = computed(() => props.order?.deliveryAddress?.trim() || '');
 
 watch(
-  [() => props.order.id, shouldActivate],
+  [() => chatKey.value, shouldActivate],
   ([orderId, active], [previousOrderId] = ['', false]) => {
     if (orderId !== previousOrderId) {
       draft.value = '';
@@ -76,7 +81,7 @@ watch(
 );
 
 watch(
-  [() => props.order.id, () => props.order.status],
+  [() => chatKey.value, () => contextStatus.value],
   ([orderId, status]) => chatStore.setOrderStatus(orderId, status),
   { immediate: true },
 );
@@ -118,17 +123,17 @@ function syncActivation(orderId: string, active: boolean) {
   }
   if (active && !activeOrderId) {
     activeOrderId = orderId;
-    void chatStore.activate(orderId, props.order.status);
+    void chatStore.activate(orderId, contextStatus.value);
   }
 }
 
 async function sendMessage(content: string) {
-  const orderId = props.order.id;
+  const orderId = chatKey.value;
   try {
     const message = await chatStore.send(orderId, content);
     if (
       message
-      && props.order.id === orderId
+      && chatKey.value === orderId
       && draft.value.trim() === content.trim()
     ) {
       draft.value = '';
@@ -160,13 +165,13 @@ async function sendImage(file: File) {
     return;
   }
   mediaError.value = '';
-  await chatStore.sendImage(props.order.id, file);
+  await chatStore.sendImage(chatKey.value, file);
 }
 
 async function requestLocation() {
   if (locationResolving.value || state.value.sending) return;
   if (!navigator.geolocation) { mediaError.value = t('cashier.chat.locationFailed'); return; }
-  const requestedOrderId = props.order.id;
+  const requestedOrderId = chatKey.value;
   locationResolving.value = true;
   mediaError.value = '';
   try {
@@ -176,7 +181,7 @@ async function requestLocation() {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }),
       );
     } catch { mediaError.value = t('cashier.chat.locationFailed'); return; }
-    if (props.order.id === requestedOrderId && shouldActivate.value && !readOnly.value) {
+    if (chatKey.value === requestedOrderId && shouldActivate.value && !readOnly.value) {
       pendingLocation.value = {
         latitude: point.coords.latitude,
         longitude: point.coords.longitude,
@@ -194,11 +199,11 @@ function cancelLocation() {
 async function confirmLocation() {
   const location = pendingLocation.value;
   if (!location || state.value.sending || readOnly.value) return;
-  const orderId = props.order.id;
+  const orderId = chatKey.value;
   mediaError.value = '';
   try {
     await chatStore.sendLocation(orderId, location.latitude, location.longitude);
-    if (props.order.id === orderId) {
+    if (chatKey.value === orderId) {
       pendingLocation.value = null;
       await nextTick();
       await messageListRef.value?.scrollToBottom();
@@ -213,21 +218,22 @@ function blurComposer() {
 }
 
 function retry() {
-  void chatStore.refresh(props.order.id, { initial: !state.value.initialized });
+  void chatStore.refresh(chatKey.value, { initial: !state.value.initialized });
 }
 </script>
 
 <template>
   <section ref="rootRef" class="order-chat-workspace" :class="{ 'order-chat-workspace--compact': compactContext }" data-testid="order-chat-workspace">
     <header class="order-chat-workspace__header" :class="{ 'order-chat-workspace__header--compact': compactContext }">
-      <div v-if="compactContext" class="order-chat-workspace__context">
+      <div v-if="reservation" class="order-chat-workspace__context"><strong>{{ reservation.reservationNo }}</strong><span>{{ customerName }}</span><span>{{ reservationText(reservation.status, locale) }}</span><small>{{ formatReservationTime(reservation.scheduledFor, locale) }}</small></div>
+      <div v-else-if="compactContext && order" class="order-chat-workspace__context">
         <strong>{{ compactPickupCode }}</strong>
         <span>{{ customerName }}</span>
         <OrderStatusBadge :status="order.status" />
         <small v-if="compactEstimate">{{ formatVietnamTime(compactEstimate, locale) }}</small>
         <small v-if="compactDeliveryAddress" class="order-chat-workspace__delivery-context">{{ compactDeliveryAddress }}</small>
       </div>
-      <div v-else>
+      <div v-else-if="order">
         <h3>{{ t('cashier.chat.title') }} · #{{ order.orderNo }}</h3>
         <p>{{ t('cashier.chat.customer') }} · {{ customerName }}</p>
       </div>
@@ -250,7 +256,7 @@ function retry() {
         :loading="state.loading"
         :refreshing="state.refreshing"
         :has-more="state.hasMore"
-        @load-more="chatStore.loadNextPage(order.id)"
+        @load-more="chatStore.loadNextPage(chatKey)"
         @surface-interaction="blurComposer"
       />
 

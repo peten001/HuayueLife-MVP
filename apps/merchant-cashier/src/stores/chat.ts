@@ -8,9 +8,9 @@ import {
   sendMerchantOrderChatImage,
   sendMerchantOrderChatLocation,
   type MerchantOrderChat,
+  type MerchantChatStatus,
   type OrderChatMessage,
 } from '@/api/order-chat';
-import type { OrderStatus } from '@/types';
 
 const CHAT_POLL_INTERVAL_MS = 5_000;
 const CHAT_PAGE_SIZE = 50;
@@ -22,7 +22,7 @@ export type ChatErrorKey =
 
 export interface OrderChatState {
   orderId: string;
-  orderStatus: OrderStatus;
+  orderStatus: MerchantChatStatus;
   conversation: MerchantOrderChat | null;
   messages: OrderChatMessage[];
   initialized: boolean;
@@ -44,7 +44,7 @@ export const useChatStore = defineStore('cashier-chat', () => {
   let pollRunning = false;
   let runtimeListenersAttached = false;
 
-  function ensureState(orderId: string, orderStatus: OrderStatus = 'PENDING_ACCEPTANCE') {
+  function ensureState(orderId: string, orderStatus: MerchantChatStatus = 'PENDING_ACCEPTANCE') {
     const existing = states.value[orderId];
     if (existing) return existing;
     const created: OrderChatState = {
@@ -70,7 +70,7 @@ export const useChatStore = defineStore('cashier-chat', () => {
     return ensureState(orderId);
   }
 
-  function setOrderStatus(orderId: string, status: OrderStatus) {
+  function setOrderStatus(orderId: string, status: MerchantChatStatus) {
     ensureState(orderId, status).orderStatus = status;
   }
 
@@ -78,10 +78,11 @@ export const useChatStore = defineStore('cashier-chat', () => {
     const state = ensureState(orderId);
     return state.orderStatus === 'COMPLETED'
       || state.orderStatus === 'CANCELLED'
+      || state.orderStatus === 'NO_SHOW'
       || state.conversation?.status === 'CLOSED';
   }
 
-  async function activate(orderId: string, orderStatus: OrderStatus) {
+  async function activate(orderId: string, orderStatus: MerchantChatStatus) {
     const state = ensureState(orderId, orderStatus);
     state.orderStatus = orderStatus;
     activeCounts.set(orderId, (activeCounts.get(orderId) ?? 0) + 1);
@@ -144,7 +145,7 @@ export const useChatStore = defineStore('cashier-chat', () => {
 
       state.conversation = conversation;
       if (!isFinalStatus(state.orderStatus)) {
-        state.orderStatus = conversation.order.status;
+        state.orderStatus = conversation.reservation?.status ?? conversation.order?.status ?? state.orderStatus;
       }
       state.messages = mergeChatMessages(state.messages, incoming.items);
       state.conversation = reconcileConversationWithMessages(
@@ -460,8 +461,8 @@ function numericId(value: string) {
   }
 }
 
-function isFinalStatus(status: OrderStatus) {
-  return status === 'COMPLETED' || status === 'CANCELLED';
+function isFinalStatus(status: MerchantChatStatus) {
+  return status === 'COMPLETED' || status === 'CANCELLED' || status === 'NO_SHOW';
 }
 
 function reconcileConversationWithMessages(

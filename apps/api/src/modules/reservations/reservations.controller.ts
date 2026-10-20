@@ -8,7 +8,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { UserAccountGuard } from '../../common/guards/account-type.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
-import { CreateDiningReservationDto, ReservationActionDto, ReservationParamsDto, ReservationTimeReplyDto } from './reservation.dto';
+import { AddReservationDishesDto, CreateDiningReservationDto, ReservationActionDto, ReservationParamsDto, ReservationTimeReplyDto } from './reservation.dto';
 import { ReservationsService } from './reservations.service';
 
 @Controller('reservations')
@@ -25,6 +25,10 @@ export class ReservationsController {
   get(@CurrentUser() user: AuthUser, @Param() p: IdParamDto) { return this.service.getUser(BigInt(user.sub), BigInt(p.id)); }
   @Post(':id/cancel')
   cancel(@CurrentUser() user: AuthUser, @Param() p: IdParamDto) { return this.service.cancelUser(BigInt(user.sub), BigInt(p.id)); }
+  @Post(':id/dishes')
+  addDishes(@CurrentUser() user: AuthUser, @Param() p: IdParamDto, @Headers('idempotency-key') key: string | undefined, @Body() dto: AddReservationDishesDto) {
+    return this.service.addDishes(BigInt(user.sub), BigInt(p.id), key ?? '', dto);
+  }
   @Post(':kind/:id/reply-time')
   reply(@CurrentUser() user: AuthUser, @Param() p: ReservationParamsDto, @Body() dto: ReservationTimeReplyDto) {
     return this.service.replyTime(BigInt(user.sub), p.kind, BigInt(p.id), dto);

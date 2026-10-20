@@ -819,6 +819,7 @@ export class OrdersService {
   }
 
   private readonly orderListInclude = {
+    chatConversation: { include: { lastMessage: true } },
     merchant: {
       select: { id: true, nameZh: true, logoUrl: true },
     },

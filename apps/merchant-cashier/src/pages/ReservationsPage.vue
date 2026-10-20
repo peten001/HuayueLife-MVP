@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, CalendarClock, ChevronRight, RefreshCw, Search, Users, X } from '@lucide/vue';
+import { ArrowLeft, CalendarClock, ChevronRight, MessageCircle, RefreshCw, Search, Users, X } from '@lucide/vue';
 import { formatReservationTime, reservationErrorText, reservationText, reservationTimestamp, vietnamDateTimeParts, type ArrivalReservation, type ReservationTextKey } from '@huayue-life/shared';
 import { useReservationsStore } from '@/stores/reservations';
 import { useAuthStore, useNetworkStore } from '@/stores';
@@ -15,6 +15,7 @@ import type { DiningTable } from '@/types';
 import LoadingState from '@/components/common/LoadingState.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
+import OrderChatWorkspace from '@/features/chat/OrderChatWorkspace.vue';
 
 const { locale, t } = useI18n();
 const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
@@ -38,6 +39,8 @@ const rows = computed(() => store.reservations.filter(row => {
 }));
 const selected = computed(() => rows.value.find(row => row.id === route.query.reservationId)
   ?? (mobileViewport.value ? null : rows.value[0]) ?? null);
+const chatActive = computed(() => Boolean(selected.value && route.query.pane === 'chat'));
+function setPane(pane: 'detail' | 'chat') { void router.replace({ query: { ...route.query, pane } }); }
 const dialog = ref<ReservationAction['action'] | ''>('');
 const dialogRow = ref<ArrivalReservation | null>(null);
 const dialogElement = ref<HTMLElement | null>(null);
@@ -158,7 +161,7 @@ function itemName(item: ArrivalReservation['items'][number]) {
             <span class="list-card-heading"><strong>{{ formatReservationTime(row.scheduledFor, locale) }}</strong><span class="status-badge">{{ rt(row.status) }}</span></span>
             <span class="list-card-meta">{{ row.guestCount }} {{ rt('people') }} · {{ (row.table || row.assignedTable)?.tableNo || rt('tablePending') }}</span>
             <span class="list-card-contact">{{ row.contactName }} · {{ row.contactPhone }}<ChevronRight :size="16" aria-hidden="true" /></span>
-            <span v-if="row.proposedScheduledFor" class="change-label">{{ rt('changeProposed') }}</span>
+            <span v-if="row.chatConversation?.merchantUnreadCount" class="reservation-unread"><MessageCircle :size="14" aria-hidden="true" /> {{ row.chatConversation.merchantUnreadCount > 99 ? '99+' : row.chatConversation.merchantUnreadCount }}</span><span v-if="row.proposedScheduledFor" class="change-label">{{ rt('changeProposed') }}</span>
           </button>
         </div>
         <EmptyState v-else :title="rt('empty')" :description="t('reservations.diningHint')" />
@@ -167,10 +170,11 @@ function itemName(item: ArrivalReservation['items'][number]) {
       <section class="fulfillment-main">
         <div v-if="selected" class="fulfillment-main__topbar">
           <button type="button" class="mobile-workspace-back" @click="backToList"><ArrowLeft :size="18" aria-hidden="true" />{{ rt('backToList') }}</button>
-          <span class="reservation-detail-title"><CalendarClock :size="18" aria-hidden="true" />{{ rt('details') }}</span>
+          <div class="reservation-pane-tabs" role="tablist" :aria-label="rt('details')"><button type="button" role="tab" :aria-selected="!chatActive" @click="setPane('detail')"><CalendarClock :size="18" aria-hidden="true" />{{ rt('details') }}</button><button type="button" role="tab" :aria-selected="chatActive" @click="setPane('chat')"><MessageCircle :size="18" aria-hidden="true" />{{ t('cashier.chat.title') }}<span v-if="selected.chatConversation?.merchantUnreadCount" class="reservation-unread">{{ selected.chatConversation.merchantUnreadCount > 99 ? '99+' : selected.chatConversation.merchantUnreadCount }}</span></button></div>
         </div>
-        <div class="fulfillment-main__body">
-          <article v-if="selected" class="reservation-detail-panel">
+        <div class="fulfillment-main__body" :class="{ 'reservation-chat-body': chatActive }">
+          <OrderChatWorkspace v-if="selected && chatActive" :key="`reservation:${selected.id}`" :reservation="selected" compact-context @conversation-updated="store.updateChatSummary(selected.id, $event)" />
+          <article v-else-if="selected" class="reservation-detail-panel">
             <header class="detail-panel-heading"><div><span class="eyebrow">{{ rt('dineIn') }}</span><h2>{{ formatReservationTime(selected.scheduledFor, locale) }}</h2></div><span class="status-badge">{{ rt(selected.status) }}</span></header>
             <div v-if="selected.proposedScheduledFor" class="change-notice"><strong>{{ rt('changeProposed') }} · {{ formatReservationTime(selected.proposedScheduledFor, locale) }}</strong><p>{{ rt('changeHint') }}</p></div>
             <section class="reservation-table-plan"><span>{{ rt('tableNumber') }}</span><strong>{{ (selected.table || selected.assignedTable)?.tableNo || rt('tablePending') }}</strong><small v-if="selected.status === 'CONFIRMED'">{{ rt('plannedOnly') }}</small></section>
@@ -180,7 +184,7 @@ function itemName(item: ArrivalReservation['items'][number]) {
           </article>
           <EmptyState v-else :title="rt('merchantTitle')" :description="t('reservations.diningHint')" />
         </div>
-        <footer v-if="selected" class="fulfillment-action-dock reservation-actions">
+        <footer v-if="selected && !chatActive" class="fulfillment-action-dock reservation-actions">
           <button v-if="selected.status === 'PENDING'" type="button" class="primary-action" :disabled="writeDisabled || !!store.actionId || !!selected.proposedScheduledFor" @click="openDialog(selected, 'CONFIRM')">{{ rt('confirm') }}</button>
           <button v-if="selected.status === 'CONFIRMED'" type="button" class="primary-action" :disabled="writeDisabled || !!store.actionId || !!selected.proposedScheduledFor" @click="openDialog(selected, 'SEAT')">{{ rt('seat') }}</button>
           <button v-if="selected.status === 'CONFIRMED'" type="button" class="secondary-action" :disabled="writeDisabled || !!store.actionId" @click="openDialog(selected, 'ASSIGN_TABLE')">{{ rt('assignTable') }}</button>
@@ -206,6 +210,8 @@ function itemName(item: ArrivalReservation['items'][number]) {
 </template>
 
 <style scoped>
+.reservation-pane-tabs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}.reservation-pane-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;border:0;border-radius:10px;padding:8px 12px;color:var(--cashier-text-secondary,#66766b);background:transparent;font:inherit;font-size:13px;cursor:pointer}.reservation-pane-tabs button[aria-selected=true]{background:var(--cashier-surface-muted,#eaf7ee);color:var(--cashier-primary,#2e7d32)}.reservation-unread{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;background:#eaf7ee;color:#2e7d32;font-size:12px;font-weight:700}.reservation-chat-body{display:flex;flex:1;min-height:0;overflow:hidden;padding:0}
+
 .reservations-page{
   color:#24352b;
 }

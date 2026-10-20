@@ -137,4 +137,105 @@ export class OrderChatMerchantController {
   markRead(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.service.markMerchantRead(merchantId, BigInt(params.id));
   }
+  @Get('reservations/:id/chat')
+  getReservationConversation(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.service.getMerchantConversation(merchantId, BigInt(params.id), 'RESERVATION');
+  }
+
+  @Get('reservations/:id/chat/messages')
+  listReservationMessages(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Query() query: ListOrderChatMessagesQueryDto,
+  ) {
+    return this.service.listMerchantMessages(merchantId, BigInt(params.id), query, 'RESERVATION');
+  }
+
+  @Post('reservations/:id/chat/messages')
+  sendReservationMessage(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: SendOrderChatMessageDto,
+  ) {
+    return this.service.sendMerchantMessage(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto,
+      'RESERVATION',
+    );
+  }
+
+  @Post('reservations/:id/chat/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  sendReservationImage(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; size?: number },
+  ) {
+    if (!file) throw new BadRequestException('Image file is required');
+    return this.service.sendMerchantImage(merchantId, BigInt(staff.sub), BigInt(params.id), file, 'RESERVATION');
+  }
+
+  @Post('reservations/:id/chat/read')
+  markReservationRead(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.service.markMerchantRead(merchantId, BigInt(params.id), 'RESERVATION');
+  }
+}
+
+@Controller('reservations')
+@UseGuards(JwtAuthGuard, UserAccountGuard)
+export class ReservationChatUserController {
+  constructor(private readonly service: OrderChatService) {}
+
+  @Get(':id/chat')
+  getConversation(@CurrentUser() user: AuthUser, @Param() params: IdParamDto) {
+    return this.service.getCustomerConversation(BigInt(user.sub), BigInt(params.id), 'RESERVATION');
+  }
+
+  @Get(':id/chat/messages')
+  listMessages(
+    @CurrentUser() user: AuthUser,
+    @Param() params: IdParamDto,
+    @Query() query: ListOrderChatMessagesQueryDto,
+  ) {
+    return this.service.listCustomerMessages(
+      BigInt(user.sub),
+      BigInt(params.id),
+      query,
+      'RESERVATION',
+    );
+  }
+
+  @Post(':id/chat/messages')
+  sendMessage(
+    @CurrentUser() user: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: SendOrderChatMessageDto,
+  ) {
+    return this.service.sendCustomerMessage(
+      BigInt(user.sub),
+      BigInt(params.id),
+      dto,
+      'RESERVATION',
+    );
+  }
+
+  @Post(':id/chat/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  sendImage(
+    @CurrentUser() user: AuthUser,
+    @Param() params: IdParamDto,
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; size?: number },
+  ) {
+    if (!file) throw new BadRequestException('Image file is required');
+    return this.service.sendCustomerImage(BigInt(user.sub), BigInt(params.id), file, 'RESERVATION');
+  }
+
+  @Post(':id/chat/read')
+  markRead(@CurrentUser() user: AuthUser, @Param() params: IdParamDto) {
+    return this.service.markCustomerRead(BigInt(user.sub), BigInt(params.id), 'RESERVATION');
+  }
 }

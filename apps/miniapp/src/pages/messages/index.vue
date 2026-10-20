@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { computed, ref, watch } from 'vue';
+import { onHide, onShow, onUnload } from '@dcloudio/uni-app';
+import { chatMediaLabel } from '@/utils/order-chat-media';
 import { getOrders } from '@/api/orders';
+import { getDiningReservations } from '@/api/reservations';
+import { formatReservationTime, reservationText, type ArrivalReservation } from '@huayue-life/shared';
 import {
   locale,
   orderMerchantName,
@@ -20,11 +23,45 @@ type MessageTab = 'merchant' | 'system';
 const auth = useAuthStore();
 const activeTab = ref<MessageTab>('merchant');
 const { t } = useI18n();
-const merchantRecords = ref<UserOrder[]>([]);
+const orders = ref<UserOrder[]>([]);
+const reservations = ref<ArrivalReservation[]>([]);
+// A seated reservation may also have a dining order. Keep one reservation
+// card until that order has its own messages; never hide an existing history.
+const linkedOrderIds = computed(() => new Set(reservations.value.map(row => row.orderId).filter(Boolean)));
+const merchantRecords = computed(() => [
+  ...orders.value.filter(order => order.orderType !== 'DINE_IN' || !linkedOrderIds.value.has(order.id) || Boolean(order.chatConversation?.lastMessageId)).map(order => ({
+    key: `order:${order.id}`, id: order.id, kind: 'order' as const, merchant: order.merchant,
+    number: order.orderNo, status: order.status, statusLabel: order.isReservation && ['PENDING_ACCEPTANCE', 'ACCEPTED'].includes(order.status)
+      ? reservationText(order.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : 'CONFIRMED', locale.value) : orderStatusLabel(order.status, locale.value),
+    typeLabel: order.isReservation ? reservationText('pickup', locale.value) : orderTypeLabel(order.orderType, locale.value),
+    createdAt: order.createdAt, scheduledFor: order.scheduledFor,
+    chat: order.chatConversation,
+    items: order.items.map(item => ({ name: productSnapshotName(item, locale.value), quantity: item.quantity })),
+  })),
+  ...reservations.value.map(row => ({
+    key: `reservation:${row.id}`, id: row.id, kind: 'reservation' as const, merchant: row.merchant,
+    number: row.reservationNo, status: row.status, statusLabel: reservationText(row.status, locale.value),
+    typeLabel: reservationText('dineIn', locale.value), createdAt: row.createdAt, scheduledFor: row.scheduledFor,
+    chat: row.chatConversation,
+    items: row.items.map(item => ({ name: productSnapshotName(item, locale.value), quantity: item.quantity })),
+  })),
+].sort((a, b) => new Date(b.chat?.lastMessageAt || b.createdAt).getTime() - new Date(a.chat?.lastMessageAt || a.createdAt).getTime() || a.key.localeCompare(b.key)));
+type MerchantRecord = (typeof merchantRecords.value)[number];
+let timer: ReturnType<typeof setInterval> | undefined;
+let requestSeq = 0;
+let loadingRecords = false;
+let visible = false;
+let accountId = '';
 const merchantLoading = ref(false);
 const merchantLoginLoading = ref(false);
 const merchantMessage = ref('');
 const loggedIn = computed(() => Boolean(auth.user));
+watch(() => auth.user?.id, () => {
+  requestSeq++;
+  orders.value = []; reservations.value = []; accountId = '';
+  loadingRecords = false; merchantLoading.value = false; merchantMessage.value = '';
+  if (visible && auth.user) void loadMerchantRecords(true);
+});
 
 const tabs = computed<Array<{ value: MessageTab; label: string }>>(() => [
   { value: 'merchant', label: t('merchantNoticesTab') },
@@ -36,18 +73,34 @@ const panelDescription = computed(() =>
 );
 
 async function loadMerchantRecords(showLoading = false) {
-  if (!auth.user) return;
+  if (!auth.user || loadingRecords) return;
+  const userId = auth.user.id;
+  const seq = ++requestSeq;
+  loadingRecords = true;
+  if (accountId !== userId) { orders.value = []; reservations.value = []; accountId = userId; }
   if (showLoading) merchantLoading.value = true;
   try {
-    merchantRecords.value = await getOrders();
-    merchantMessage.value = '';
-  } catch (caught) {
-    merchantMessage.value =
-      caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
+    const results = await Promise.allSettled([getOrders(), getDiningReservations()]);
+    if (seq !== requestSeq || auth.user?.id !== userId) return;
+    if (results[0].status === 'fulfilled') orders.value = results[0].value;
+    if (results[1].status === 'fulfilled') reservations.value = results[1].value;
+    const failed = results.find(result => result.status === 'rejected');
+    merchantMessage.value = failed?.status === 'rejected'
+      ? failed.reason instanceof Error ? translateApiError(failed.reason.message) : t('orderLoadError') : '';
   } finally {
-    merchantLoading.value = false;
+    if (seq === requestSeq) { loadingRecords = false; merchantLoading.value = false; }
   }
 }
+
+function startPolling() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(() => {
+    if (visible && activeTab.value === 'merchant') void loadMerchantRecords();
+  }, 10000);
+}
+function stopPolling() { visible = false; requestSeq++; loadingRecords = false; merchantLoading.value = false; if (timer) clearInterval(timer); timer = undefined; }
+onHide(stopPolling);
+onUnload(stopPolling);
 
 function switchTab(tab: MessageTab) {
   activeTab.value = tab;
@@ -88,23 +141,27 @@ function isClosedOrder(status: string | undefined | null) {
     'CANCELED',
     'REFUNDED',
     'REJECTED',
+    'NO_SHOW',
   ].includes(normalized);
 }
 
-function openOrder(id: string) {
-  uni.navigateTo({ url: `/pages/order/detail?id=${id}` });
+function openOrder(record: MerchantRecord) {
+  const path = record.kind === 'reservation' ? '/pages/reservation/detail' : '/pages/order/detail';
+  uni.navigateTo({ url: `${path}?id=${encodeURIComponent(record.id)}` });
 }
 
-function openConversation(order: UserOrder) {
-  const readonly = isClosedOrder(order.status) ? '&readonly=1' : '';
-  uni.navigateTo({ url: `/pages/order/chat?orderId=${order.id}${readonly}` });
+function openConversation(record: MerchantRecord) {
+  const key = record.kind === 'reservation' ? 'reservationId' : 'orderId';
+  uni.navigateTo({ url: `/pages/order/chat?${key}=${encodeURIComponent(record.id)}` });
 }
 
 onShow(() => {
+  visible = true;
+  startPolling();
   void auth.restoreSession().then(() => {
-    if (activeTab.value === 'merchant' && auth.user) {
-      void loadMerchantRecords(true);
-    }
+    if (!visible) return;
+    if (!auth.user) { orders.value = []; reservations.value = []; accountId = ''; return; }
+    if (activeTab.value === 'merchant') void loadMerchantRecords(true);
   });
 });
 
@@ -146,10 +203,10 @@ usePageTitle(() => t('messagesTitle'));
       </view>
 
       <view v-else-if="activeTab === 'merchant' && merchantMessage" class="message">
-        {{ merchantMessage }}
+        <text>{{ merchantMessage }}</text><button class="ghost-button" @click="loadMerchantRecords(true)">{{ t('retry') }}</button>
       </view>
 
-      <view v-if="activeTab === 'merchant' && loggedIn && merchantLoading" class="empty-state compact">
+      <view v-if="activeTab === 'merchant' && loggedIn && merchantLoading && !merchantRecords.length" class="empty-state compact">
         <view class="empty-icon">🧾</view>
         <text class="empty-title">{{ t('loading') }}</text>
       </view>
@@ -160,9 +217,9 @@ usePageTitle(() => t('messagesTitle'));
       >
         <view
           v-for="order in merchantRecords"
-          :key="order.id"
+          :key="order.key"
           class="record-card"
-          @click="openOrder(order.id)"
+          @click="openOrder(order)"
         >
           <view class="record-head">
             <view class="record-main">
@@ -170,18 +227,20 @@ usePageTitle(() => t('messagesTitle'));
               <text class="record-time">{{ new Date(order.createdAt).toLocaleString() }}</text>
             </view>
             <text :class="['status-pill', isClosedOrder(order.status) ? 'closed' : 'active']">
-              {{ orderStatusLabel(order.status, locale) }}
+              {{ order.statusLabel }}
             </text>
           </view>
 
           <view class="record-meta">
-            <text class="type-pill">{{ orderTypeLabel(order.orderType, locale) }}</text>
-            <text class="order-no">{{ t('orderNo') }}：{{ order.orderNo }}</text>
+            <text class="type-pill">{{ order.typeLabel }}</text>
+            <text class="order-no">{{ t('orderNo') }}：{{ order.number }}</text>
           </view>
 
-          <view class="record-items">
-            <text v-for="item in order.items.slice(0, 2)" :key="item.id" class="item-line">
-              {{ productSnapshotName(item, locale) }} × {{ item.quantity }}
+          <text v-if="order.scheduledFor" class="record-schedule">{{ formatReservationTime(order.scheduledFor, locale) }} · {{ reservationText(order.kind === 'reservation' ? 'arrivalTime' : 'pickupTime', locale) }}</text>
+          <text v-if="order.chat?.lastMessage" class="record-preview">{{ order.chat.lastMessage.messageType === 'IMAGE' ? chatMediaLabel(locale, 'image') : order.chat.lastMessage.messageType === 'LOCATION' ? chatMediaLabel(locale, 'location') : order.chat.lastMessage.content }}</text>
+          <view v-else class="record-items">
+            <text v-for="(item, index) in order.items.slice(0, 2)" :key="index" class="item-line">
+              {{ item.name }} × {{ item.quantity }}
             </text>
             <text v-if="order.items.length > 2" class="item-line more">
               {{ t('orderItemsMore', { count: order.items.length - 2 }) }}
@@ -196,7 +255,7 @@ usePageTitle(() => t('messagesTitle'));
               </text>
             </view>
             <view class="foot-actions">
-              <button class="ghost-button" @click.stop="openOrder(order.id)">
+              <button class="ghost-button" @click.stop="openOrder(order)">
                 {{ t('viewDetails') }}
               </button>
               <button
@@ -204,6 +263,7 @@ usePageTitle(() => t('messagesTitle'));
                 @click.stop="openConversation(order)"
               >
                 {{ isClosedOrder(order.status) ? t('viewConversation') : t('openConversation') }}
+                <text v-if="order.chat?.customerUnreadCount" class="unread-count">{{ order.chat.customerUnreadCount > 99 ? '99+' : order.chat.customerUnreadCount }}</text>
               </button>
             </view>
           </view>
@@ -224,6 +284,8 @@ usePageTitle(() => t('messagesTitle'));
 </template>
 
 <style scoped>
+.record-schedule,.record-preview{display:block;margin-top:16rpx;color:#666;font-size:24rpx;line-height:1.6;overflow-wrap:anywhere}.record-preview{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;color:#1f2d24}.unread-count{min-width:36rpx;margin-left:10rpx;padding:0 6rpx;box-sizing:border-box;border-radius:999rpx;background:#fff;color:#2e7d32;text-align:center;font-size:21rpx}
+
 .page {
   min-height: 100vh;
   padding: 24rpx 24rpx calc(44rpx + env(safe-area-inset-bottom));
@@ -415,7 +477,7 @@ usePageTitle(() => t('messagesTitle'));
   border-radius: 999rpx;
   font-size: 20rpx;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .status-pill.active {
@@ -466,7 +528,8 @@ usePageTitle(() => t('messagesTitle'));
 .record-foot {
   display: flex;
   gap: 16rpx;
-  align-items: flex-end;
+  align-items: stretch;
+  flex-direction: column;
   justify-content: space-between;
   margin-top: 18rpx;
 }
@@ -495,7 +558,7 @@ usePageTitle(() => t('messagesTitle'));
   display: flex;
   gap: 12rpx;
   align-items: center;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .ghost-button,
@@ -504,7 +567,7 @@ usePageTitle(() => t('messagesTitle'));
   align-items: center;
   justify-content: center;
   min-width: 132rpx;
-  height: 64rpx;
+  min-height: 44px;
   padding: 0 20rpx;
   border: 0;
   border-radius: 999rpx;

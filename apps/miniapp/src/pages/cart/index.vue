@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
+import { reservationText } from '@huayue-life/shared';
 import { formatNumberCurrency, orderTypeLabel, productName, useI18n, usePageTitle } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
@@ -63,7 +64,9 @@ async function clear() {
 function checkout() {
   if (!appConfig.platformOrderingEnabled) return;
   if (!cartStore.cart?.items.length) return;
-  uni.navigateTo({ url: cartStore.context?.reservation
+  uni.navigateTo({ url: cartStore.context?.diningReservationId
+    ? `/pages/reservation/dishes?id=${encodeURIComponent(cartStore.context.diningReservationId)}`
+    : cartStore.context?.reservation
     ? `/pages/reservation/create?merchantId=${cartStore.context.merchantId}&kind=${cartStore.context.orderType}`
     : '/pages/checkout/index' });
 }
@@ -87,7 +90,7 @@ function goHome() {
         <text class="order-type">
           {{
             cartStore.context.orderType === 'DINE_IN'
-              ? t('contextDineIn', { table: cartStore.context.tableName || cartStore.context.tableNo || '' })
+              ? cartStore.context.reservation ? reservationText('dineIn', locale) : t('contextDineIn', { table: cartStore.context.tableName || cartStore.context.tableNo || '' })
               : orderTypeLabel(cartStore.context.orderType, locale)
           }}
         </text>
@@ -123,7 +126,7 @@ function goHome() {
           <text class="total-label">{{ t('totalAmount') }}</text>
           <text class="total-amount">{{ amount.toLocaleString() }} ₫</text>
         </view>
-        <button class="submit" @click="checkout">{{ t('checkout') }}</button>
+        <button class="submit" @click="checkout">{{ cartStore.context?.reservation || cartStore.context?.orderType === 'DELIVERY' ? reservationText('selectionDone', locale) : t('checkout') }}</button>
       </view>
     </view>
   </view>

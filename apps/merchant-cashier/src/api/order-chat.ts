@@ -1,3 +1,4 @@
+import type { ArrivalStatus } from '@huayue-life/shared';
 import {
   createDemoChatMessage,
   listDemoChatMessages,
@@ -12,7 +13,7 @@ import { requestApi } from './http';
 export interface OrderChatMessage {
   id: string;
   conversationId: string;
-  orderId: string;
+  orderId: string | null;
   senderType: 'CUSTOMER' | 'MERCHANT';
   senderId: string;
   content: string;
@@ -38,8 +39,11 @@ export interface MerchantChatOrderSummary {
   createdAt: string;
 }
 
+export type MerchantChatStatus = OrderStatus | ArrivalStatus;
+
 export interface MerchantOrderChat extends MerchantOrderChatConversation {
-  order: MerchantChatOrderSummary;
+  order?: MerchantChatOrderSummary | null;
+  reservation?: { id: string; reservationNo: string; status: ArrivalStatus; scheduledFor: string; createdAt: string } | null;
   merchant: {
     id: string;
     nameZh: string;
@@ -69,13 +73,19 @@ interface ChatRequestOptions {
 
 const DEMO_MESSAGE_LIMIT = 50;
 
+function chatPath(key: string) {
+  return key.startsWith('reservation:')
+    ? `/merchant/reservations/${encodeURIComponent(key.slice('reservation:'.length))}/chat`
+    : `/merchant/orders/${encodeURIComponent(key)}/chat`;
+}
+
 export function getMerchantOrderChat(
   orderId: string,
   options: ChatRequestOptions = {},
 ) {
   if (isDemoSessionActive()) return Promise.resolve(createDemoConversation(orderId));
   return requestApi<MerchantOrderChat>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat`,
+    chatPath(orderId),
     { signal: options.signal },
   );
 }
@@ -90,7 +100,7 @@ export function listMerchantOrderChatMessages(
     return Promise.resolve(listDemoMessages(orderId, cursor, limit));
   }
   return requestApi<ListOrderChatMessagesResult>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,
+    `${chatPath(orderId)}/messages`,
     {
       query: { cursor, limit },
       signal: query.signal,
@@ -107,7 +117,7 @@ export function sendMerchantOrderChatMessage(
     return Promise.resolve(createDemoChatMessage(orderId, content));
   }
   return requestApi<OrderChatMessage>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,
+    `${chatPath(orderId)}/messages`,
     { method: 'POST', body: { content }, signal: options.signal },
   );
 }
@@ -121,7 +131,7 @@ export function sendMerchantOrderChatLocation(orderId: string, latitude: number,
     }));
   }
   return requestApi<OrderChatMessage>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,
+    `${chatPath(orderId)}/messages`,
     { method: 'POST', body: { messageType: 'LOCATION', latitude, longitude } },
   );
 }
@@ -133,7 +143,7 @@ export function sendMerchantOrderChatImage(orderId: string, file: File) {
   const form = new FormData();
   form.append('file', file);
   return requestApi<OrderChatMessage>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat/images`,
+    `${chatPath(orderId)}/images`,
     { method: 'POST', body: form },
   );
 }
@@ -144,7 +154,7 @@ export function markMerchantOrderChatRead(
 ) {
   if (isDemoSessionActive()) return Promise.resolve(createDemoConversation(orderId));
   return requestApi<MerchantOrderChat>(
-    `/merchant/orders/${encodeURIComponent(orderId)}/chat/read`,
+    `${chatPath(orderId)}/read`,
     { method: 'POST', signal: options.signal },
   );
 }

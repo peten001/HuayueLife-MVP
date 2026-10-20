@@ -3,6 +3,9 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomBytes, randomUUID } from 'node:crypto';
 import request = require('supertest');
+import sharp = require('sharp');
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
 import { ReceiptSnapshotService } from '../src/modules/printing/services/receipt-snapshot.service';
@@ -34,6 +37,10 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     merchantId: merchantId.toString(), orderType: 'PICKUP', reservation: true, scheduledFor,
     expectedAmountVnd: '100000', contactName: '自取验收', contactPhone: '0901234567',
   }, userToken, key);
+  const freshDiningCart = async () => {
+    await prisma.cart.updateMany({ where: { userId, merchantId, orderType: 'DINE_IN', tableId: null, status: 'ACTIVE' }, data: { status: 'ABANDONED' } });
+    return (await addItem('DINE_IN').expect(201)).body.data;
+  };
 
   beforeAll(async () => {
     const url = new URL(process.env.DATABASE_URL ?? 'mysql://invalid');
@@ -149,6 +156,64 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     await call('post', `/merchant/table-sessions/${seated.tableSessionId}/cashier-checkout`, { paymentMethod: 'CASH' }, staffToken).expect(201);
     expect((await call('get', `/reservations/${row.id}`).expect(200)).body.data.status).toBe('COMPLETED');
   });
+  it('adds dishes after confirmation once, enforces ownership and keeps an ambiguous retry safe after seating', async () => {
+    const row = (await dining().expect(201)).body.data;
+    const cart = await freshDiningCart();
+    const key = randomUUID(), payload = { cartId: cart.id, expectedAmountVnd: '100000' };
+    const save = (token = userToken) => call('post', `/reservations/${row.id}/dishes`, payload, token, key);
+    await save().expect(409);
+    await action(row.id, 'CONFIRM').expect(201);
+    await save(otherUserToken).expect(404);
+    const responses = await Promise.all([save(), save(), save()]);
+    expect(responses.map(r => r.status)).toEqual([201, 201, 201]);
+    expect(responses.map(r => r.body.data.items.length)).toEqual([1, 1, 1]);
+    expect(responses[0].body.data.itemAmountVnd).toBe('100000');
+    expect((await prisma.cart.findUniqueOrThrow({ where: { id: BigInt(cart.id) } })).status).toBe('CHECKED_OUT');
+    expect(responses[0].body.data.tableSessionId).toBeNull();
+    const other = (await dining().expect(201)).body.data;
+    await action(other.id, 'CONFIRM').expect(201);
+    await call('post', `/reservations/${other.id}/dishes`, payload, userToken, randomUUID()).expect(409);
+    const table = await newTable();
+    const seated = (await action(row.id, 'SEAT', { tableId: table.id.toString() }).expect(201)).body.data;
+    await save().expect(201);
+    await call('post', `/reservations/${row.id}/dishes`, payload, userToken, randomUUID()).expect(409);
+    expect(await prisma.orderItem.count({ where: { orderId: BigInt(seated.orderId) } })).toBe(1);
+    expect(await prisma.kdsTask.count({ where: { orderId: BigInt(seated.orderId) } })).toBe(0);
+  });
+  it('preserves existing dishes and the cart on price changes, then accepts the refreshed amount', async () => {
+    const row = (await dining().expect(201)).body.data;
+    await action(row.id, 'CONFIRM').expect(201);
+    const cart = await freshDiningCart();
+    await prisma.product.update({ where: { id: productId }, data: { priceVnd: 60000n } });
+    try {
+      await call('post', `/reservations/${row.id}/dishes`, { cartId: cart.id, expectedAmountVnd: '100000' }, userToken, randomUUID()).expect(409);
+      expect((await prisma.cart.findUniqueOrThrow({ where: { id: BigInt(cart.id) } })).status).toBe('ACTIVE');
+      expect((await call('get', `/reservations/${row.id}`).expect(200)).body.data.items).toEqual([]);
+      await call('post', `/reservations/${row.id}/dishes`, { cartId: cart.id, expectedAmountVnd: '120000' }, userToken, randomUUID()).expect(201);
+      const more = await freshDiningCart();
+      const result = (await call('post', `/reservations/${row.id}/dishes`, { cartId: more.id, expectedAmountVnd: '120000' }, userToken, randomUUID()).expect(201)).body.data;
+      expect(result.items).toHaveLength(2); expect(result.itemAmountVnd).toBe('240000');
+    } finally { await prisma.product.update({ where: { id: productId }, data: { priceVnd: 50000n } }); }
+  });
+  it('blocks dishes during a time change and atomically resolves a race with seating', async () => {
+    const row = (await dining().expect(201)).body.data;
+    await action(row.id, 'CONFIRM').expect(201);
+    const cart = await freshDiningCart(), time = future(180);
+    const payload = { cartId: cart.id, expectedAmountVnd: '100000' };
+    await action(row.id, 'PROPOSE_TIME', { scheduledFor: time }).expect(201);
+    await call('post', `/reservations/${row.id}/dishes`, payload, userToken, randomUUID()).expect(409);
+    await call('post', `/reservations/DINE_IN/${row.id}/reply-time`, { accept: false, proposedScheduledFor: time }).expect(201);
+    const table = await newTable();
+    const [added, seated] = await Promise.all([
+      call('post', `/reservations/${row.id}/dishes`, payload, userToken, randomUUID()),
+      action(row.id, 'SEAT', { tableId: table.id.toString() }),
+    ]);
+    expect(seated.status).toBe(201); expect([201, 409]).toContain(added.status);
+    const actual = (await call('get', `/reservations/${row.id}`).expect(200)).body.data;
+    expect(actual.items.length).toBe(added.status === 201 ? 1 : 0);
+    const orders = await prisma.order.findMany({ where: { tableSessionId: BigInt(actual.tableSessionId) }, include: { items: true } });
+    expect(orders.flatMap(order => order.items).length).toBe(actual.items.length);
+  });
   it('never seats another party into an occupied table', async () => {
     const table = await newTable();
     const rows = await Promise.all([dining(), dining()]);
@@ -247,4 +312,161 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     await action(row.id, 'CONFIRM').expect(201);
     await call('patch', '/merchant/profile', { dineInReservationEnabled: true }, staffToken).expect(200);
   });
+  describe('reservation conversations', () => {
+    it('allows a pending seats-only reservation to chat without creating an order or kitchen task', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const before = await prisma.order.count({ where: { merchantId } });
+      const chat = (await call('get', `/reservations/${row.id}/chat`).expect(200)).body.data;
+      expect(chat).toMatchObject({ orderId: null, reservationId: row.id, status: 'ACTIVE', order: null,
+        reservation: { id: row.id, status: 'PENDING' } });
+      expect(chat.reservation.tableSession).toBeUndefined();
+      await call('post', `/reservations/${row.id}/chat/messages`, { content: '  我会晚到十分钟  ' }).expect(201);
+      const inbox = (await call('get', '/merchant/chat/conversations?unreadOnly=true', undefined, staffToken).expect(200)).body.data;
+      expect(inbox).toEqual(expect.arrayContaining([expect.objectContaining({ reservationId: row.id, merchantUnreadCount: 1 })]));
+      const rows = (await call('get', '/merchant/reservations', undefined, staffToken).expect(200)).body.data.reservations;
+      expect(rows.find((candidate: { id: string; kind: string }) => candidate.id === row.id && candidate.kind === 'DINE_IN').chatConversation.merchantUnreadCount).toBe(1);
+      expect(await prisma.order.count({ where: { merchantId } })).toBe(before);
+      expect(await prisma.orderChatConversation.count({ where: { reservationId: BigInt(row.id) } })).toBe(1);
+      expect((await call('get', `/reservations/${row.id}`).expect(200)).body.data.orderId).toBeNull();
+    });
+    it('serializes simultaneous first opens from both sides and concurrent sends into one conversation', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const path = `/reservations/${row.id}/chat`;
+      const results = await Promise.all([
+        call('get', path).expect(200), call('get', `${path}/messages?limit=50`).expect(200),
+        call('get', `/merchant${path}`, undefined, staffToken).expect(200),
+        call('get', `/merchant${path}/messages`, undefined, staffToken).expect(200),
+        call('post', `${path}/messages`, { content: '我会晚到' }).expect(201),
+        call('post', `/merchant${path}/messages`, { content: '收到' }, staffToken).expect(201),
+      ]);
+      expect(results[0].body.data.id).toBe(results[2].body.data.id);
+      expect(await prisma.orderChatConversation.count({ where: { reservationId: BigInt(row.id) } })).toBe(1);
+      expect((await call('get', path).expect(200)).body.data).toMatchObject({ customerUnreadCount: 1, merchantUnreadCount: 1 });
+      expect((await call('get', `${path}/messages`).expect(200)).body.data.items).toHaveLength(2);
+    });
+    it('supports merchant replies, unread summaries, forward pagination and read receipts on both sides', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const path = `/reservations/${row.id}/chat`;
+      const first = (await call('post', `${path}/messages`, { content: '临时多来一位' }).expect(201)).body.data;
+      const reply = (await call('post', `/merchant${path}/messages`, { content: '收到，为您安排' }, staffToken).expect(201)).body.data;
+      const location = (await call('post', `${path}/messages`, { messageType: 'LOCATION', latitude: 21.281, longitude: 106.197 }).expect(201)).body.data;
+      expect(location).toMatchObject({ messageType: 'LOCATION', orderId: null, latitude: 21.281, longitude: 106.197 });
+      const page = (await call('get', `${path}/messages?limit=1`).expect(200)).body.data;
+      expect(page.items.map((message: { id: string }) => message.id)).toEqual([first.id]);
+      expect(page.pageInfo).toMatchObject({ hasMore: true, nextCursor: first.id });
+      const next = (await call('get', `${path}/messages?cursor=${first.id}&limit=50`).expect(200)).body.data;
+      expect(next.items.map((message: { id: string }) => message.id)).toEqual([reply.id, location.id]);
+      expect((await call('get', '/reservations').expect(200)).body.data.find((candidate: { id: string }) => candidate.id === row.id).chatConversation.customerUnreadCount).toBe(1);
+      const read = (await call('post', `${path}/read`, {}).expect(201)).body.data;
+      expect(read.customerUnreadCount).toBe(0); expect(read.merchantUnreadCount).toBe(2);
+      const merchantRead = (await call('post', `/merchant${path}/read`, {}, staffToken).expect(201)).body.data;
+      expect(merchantRead.merchantUnreadCount).toBe(0);
+      const messages = (await call('get', `${path}/messages`).expect(200)).body.data.items;
+      expect(messages.every((message: { readAt: string | null }) => message.readAt)).toBe(true);
+      expect((await call('get', `/reservations/${row.id}`).expect(200)).body.data).toMatchObject({ guestCount: 2, status: 'PENDING', proposedScheduledFor: null });
+    });
+    it('isolates reservation read, send, read receipts and image uploads by customer, merchant and account type', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const userPath = `/reservations/${row.id}/chat`;
+      for (const [method, suffix, body] of [['get', '', undefined], ['get', '/messages', undefined], ['post', '/messages', { content: '禁止越权' }], ['post', '/read', {}]] as const) {
+        await call(method, `${userPath}${suffix}`, body, otherUserToken).expect(404);
+        await call(method, `/merchant${userPath}${suffix}`, body, otherStaffToken).expect(404);
+      }
+      await call('get', userPath, undefined, staffToken).expect(403);
+      await call('get', `/merchant${userPath}`, undefined, userToken).expect(403);
+      await request(app.getHttpServer()).get(`/api/v1${userPath}`).expect(401);
+      await request(app.getHttpServer()).post(`/api/v1${userPath}/images`).set('Authorization', `Bearer ${otherUserToken}`)
+        .attach('file', Buffer.from('invalid'), { filename: 'test.png', contentType: 'image/png' }).expect(404);
+      expect(await prisma.orderChatConversation.count({ where: { reservationId: BigInt(row.id) } })).toBe(0);
+    });
+    it('keeps pickup, delivery and reservation conversations separate even when numeric IDs overlap', async () => {
+      await addItem('PICKUP').expect(201);
+      const order = (await pickup().expect(201)).body.data;
+      const source = (await dining().expect(201)).body.data;
+      // Fresh IDs avoid borrowing another fixture's reservation on repeated runs.
+      const sharedId = BigInt(Date.now()) * 1000n + BigInt(randomBytes(2).readUInt16BE() % 1000);
+      await prisma.order.update({ where: { id: BigInt(order.id) }, data: { id: sharedId } });
+      await prisma.diningReservation.update({ where: { id: BigInt(source.id) }, data: { id: sharedId } });
+      order.id = sharedId.toString();
+      const reservationId = sharedId.toString();
+      await call('post', `/orders/${order.id}/chat/messages`, { content: '自取改计划' }).expect(201);
+      await call('post', `/reservations/${reservationId}/chat/messages`, { content: '用餐改计划' }).expect(201);
+      const pickupChat = (await call('get', `/orders/${order.id}/chat`).expect(200)).body.data;
+      const diningChat = (await call('get', `/reservations/${reservationId}/chat`).expect(200)).body.data;
+      expect(pickupChat.id).not.toBe(diningChat.id);
+      expect((await call('get', `/orders/${order.id}/chat/messages`).expect(200)).body.data.items.map((message: { content: string }) => message.content)).toEqual(['自取改计划']);
+      expect((await call('get', `/reservations/${reservationId}/chat/messages`).expect(200)).body.data.items.map((message: { content: string }) => message.content)).toEqual(['用餐改计划']);
+      const orders = (await call('get', '/orders').expect(200)).body.data;
+      expect(orders.find((candidate: { id: string }) => candidate.id === order.id).chatConversation.lastMessage.content).toBe('自取改计划');
+      await call('post', `/merchant/orders/${order.id}/chat/messages`, { content: '自取收到' }, staffToken).expect(201);
+      expect((await call('get', `/orders/${order.id}/chat`).expect(200)).body.data.customerUnreadCount).toBe(1);
+    });
+    it('reuses image upload and optimization for reservation chat on both sides', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const image = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#43a047' } }).png().toBuffer();
+      const paths: string[] = [];
+      try {
+        for (const [prefix, token] of [['', userToken], ['/merchant', staffToken]]) {
+          const result = await request(app.getHttpServer()).post(`/api/v1${prefix}/reservations/${row.id}/chat/images`)
+            .set('Authorization', `Bearer ${token}`).attach('file', image, { filename: 'test.png', contentType: 'image/png' }).expect(201);
+          expect(result.body.data).toMatchObject({ orderId: null, messageType: 'IMAGE', content: '[图片]' });
+          expect(result.body.data.mediaUrl).toMatch(/^\/uploads\/chat\/[\da-f-]+\.webp$/);
+          paths.push(result.body.data.mediaUrl);
+        }
+        const history = (await call('get', `/reservations/${row.id}/chat/messages`).expect(200)).body.data.items;
+        expect(history.map((message: { senderType: string }) => message.senderType)).toEqual(['CUSTOMER', 'MERCHANT']);
+      } finally {
+        await Promise.all(paths.map(path => rm(join(process.cwd(), path.slice(1)), { force: true })));
+      }
+    });
+    it('preserves the existing delivery chat routes and order-backed messages', async () => {
+      const seed = await prisma.order.findFirstOrThrow({ where: { merchantId, userId }, orderBy: { id: 'desc' } });
+      const { id: _id, ...data } = seed;
+      const order = await prisma.order.create({ data: { ...data, orderNo: `CHAT${randomBytes(10).toString('hex')}`,
+        idempotencyKey: randomUUID(), orderType: 'DELIVERY', isReservation: false, status: 'ACCEPTED' } });
+      await call('post', `/orders/${order.id}/chat/messages`, { content: '配送联系' }).expect(201);
+      await call('post', `/merchant/orders/${order.id}/chat/messages`, { messageType: 'LOCATION', latitude: 21.281, longitude: 106.197 }, staffToken).expect(201);
+      expect((await call('get', `/orders/${order.id}/chat`).expect(200)).body.data).toMatchObject({ orderId: order.id.toString(), reservationId: null, status: 'ACTIVE' });
+      const messages = (await call('get', `/orders/${order.id}/chat/messages`).expect(200)).body.data.items;
+      expect(messages).toHaveLength(2); expect(messages.every((message: { orderId: string }) => message.orderId === order.id.toString())).toBe(true);
+    });
+    it('retains readable history after cancellation and rejects further messages from both sides', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const path = `/reservations/${row.id}/chat`;
+      await call('post', `${path}/messages`, { content: '今天临时有事' }).expect(201);
+      await call('post', `/reservations/${row.id}/cancel`, {}).expect(201);
+      expect((await call('get', path).expect(200)).body.data.status).toBe('CLOSED');
+      expect((await call('get', `${path}/messages`).expect(200)).body.data.items).toHaveLength(1);
+      await call('post', `${path}/messages`, { content: '结束后不能发' }).expect(409);
+      await call('post', `/merchant${path}/messages`, { content: '结束后不能发' }, staffToken).expect(409);
+      await call('post', `${path}/read`, {}).expect(201);
+    });
+    it('preserves the same conversation after seating and closes it when the table session ends', async () => {
+      const row = (await dining().expect(201)).body.data;
+      const path = `/reservations/${row.id}/chat`;
+      const before = (await call('get', path).expect(200)).body.data;
+      await action(row.id, 'CONFIRM').expect(201);
+      const table = await newTable();
+      const seated = (await action(row.id, 'SEAT', { tableId: table.id.toString() }).expect(201)).body.data;
+      await call('post', `${path}/messages`, { content: '已经到店了' }).expect(201);
+      expect((await call('get', path).expect(200)).body.data).toMatchObject({ id: before.id, status: 'ACTIVE', reservation: { status: 'SEATED' } });
+      // Closing only a disposable, seats-only fixture; no payment or production writes.
+      await prisma.tableSession.update({ where: { id: BigInt(seated.tableSessionId) }, data: { status: 'CLOSED', closedAt: new Date() } });
+      const ended = (await call('get', path).expect(200)).body.data;
+      expect(ended).toMatchObject({ id: before.id, status: 'CLOSED', reservation: { status: 'COMPLETED' } });
+      expect(ended.reservation.tableSession).toBeUndefined();
+      await call('post', `${path}/messages`, { messageType: 'LOCATION', latitude: 21, longitude: 106 }).expect(409);
+    });
+    it('makes no-show reservations read-only while preserving merchant unread history', async () => {
+      const row = (await dining().expect(201)).body.data;
+      await call('post', `/reservations/${row.id}/chat/messages`, { content: '可能赶不上了' }).expect(201);
+      await action(row.id, 'CONFIRM').expect(201);
+      await prisma.diningReservation.update({ where: { id: BigInt(row.id) }, data: { scheduledFor: new Date(Date.now() - 60000) } });
+      await action(row.id, 'NO_SHOW').expect(201);
+      const chat = (await call('get', `/merchant/reservations/${row.id}/chat`, undefined, staffToken).expect(200)).body.data;
+      expect(chat).toMatchObject({ status: 'CLOSED', merchantUnreadCount: 1, reservation: { status: 'NO_SHOW' } });
+      await call('post', `/reservations/${row.id}/chat/messages`, { content: '结束' }).expect(409);
+    });
+  });
+
 });

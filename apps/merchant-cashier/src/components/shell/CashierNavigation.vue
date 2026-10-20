@@ -32,7 +32,7 @@ const items = computed(() => allItems.filter((item) => {
 }));
 
 function badge(item: (typeof allItems)[number]) {
-  if (item.countKey === 'reservations') return reservations.pending.length;
+  if (item.countKey === 'reservations') return reservations.attentionCount;
   if (item.countKey === 'tables') return props.tableAttentionCount || 0;
   if (item.countKey === 'pickup') return props.pickupAttentionCount || 0;
   if (item.countKey === 'delivery') return props.deliveryAttentionCount || 0;

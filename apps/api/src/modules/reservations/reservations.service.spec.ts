@@ -63,6 +63,55 @@ describe('arrival reservation policy', () => {
 });
 
 describe('ReservationsService', () => {
+  it('adds dishes only to the confirmed reservation and replays the same request even after seating', async () => {
+    const h = setup(); h.set({ status: 'CONFIRMED' });
+    const dto = { cartId: '10', expectedAmountVnd: '100000' };
+    const result = await h.service.addDishes(2n, 11n, 'confirmed-dishes-1', dto);
+    expect(result.itemAmountVnd).toBe(100000n);
+    expect(result.items).toEqual([expect.objectContaining({ quantity: 2, unitPriceVnd: '50000', productNameViSnapshot: 'Cơm' })]);
+    expect(h.tx.cart.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 10n, userId: 2n, merchantId: 3n, orderType: 'DINE_IN', tableId: null, status: 'ACTIVE' }) }));
+    expect(h.tx.cart.update).toHaveBeenCalledTimes(1);
+    expect(h.tx.order.create).not.toHaveBeenCalled();
+    expect(h.tables.getOrCreateOpenSession).not.toHaveBeenCalled();
+    h.set({ status: 'SEATED' });
+    const replay = await h.service.addDishes(2n, 11n, 'confirmed-dishes-1', dto);
+    expect(replay.items).toHaveLength(1);
+    expect(h.tx.cart.update).toHaveBeenCalledTimes(1);
+  });
+  it.each(['PENDING', 'SEATED', 'CANCELLED', 'NO_SHOW', 'COMPLETED'])('rejects new dish selections when the reservation is %s', async status => {
+    const h = setup(); h.set({ status });
+    await expect(h.service.addDishes(2n, 11n, 'confirmed-dishes-1', { cartId: '10', expectedAmountVnd: '100000' })).rejects.toThrow(ConflictException);
+    expect(h.tx.cart.findFirst).not.toHaveBeenCalled();
+    expect(h.tx.diningReservation.update).not.toHaveBeenCalled();
+  });
+  it('requires ownership and a completed time-change reply before adding dishes', async () => {
+    const h = setup(); h.tx.diningReservation.findFirst.mockResolvedValueOnce(null);
+    await expect(h.service.addDishes(99n, 11n, 'confirmed-dishes-1', { cartId: '10', expectedAmountVnd: '100000' })).rejects.toThrow(NotFoundException);
+    expect(h.tx.diningReservation.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 11n, userId: 99n } }));
+    h.set({ status: 'CONFIRMED', proposedScheduledFor: new Date() });
+    await expect(h.service.addDishes(2n, 11n, 'confirmed-dishes-1', { cartId: '10', expectedAmountVnd: '100000' })).rejects.toThrow(ConflictException);
+    expect(h.tx.cart.update).not.toHaveBeenCalled();
+  });
+  it('does not consume an expired, foreign or already used cart', async () => {
+    const h = setup(); h.set({ status: 'CONFIRMED' }); h.tx.cart.findFirst.mockResolvedValue(null);
+    await expect(h.service.addDishes(2n, 11n, 'confirmed-dishes-1', { cartId: '10', expectedAmountVnd: '100000' })).rejects.toThrow(ConflictException);
+    expect(h.tx.diningReservation.update).not.toHaveBeenCalled();
+    expect(h.tx.cart.update).not.toHaveBeenCalled();
+  });
+  it.each(['price', 'availability'])('preserves the booking and cart on a %s change', async change => {
+    const h = setup(); h.set({ status: 'CONFIRMED' });
+    if (change === 'availability') h.product.status = 'SOLD_OUT';
+    await expect(h.service.addDishes(2n, 11n, 'confirmed-dishes-1', { cartId: '10', expectedAmountVnd: change === 'price' ? '90000' : '100000' })).rejects.toThrow(ConflictException);
+    expect(h.tx.diningReservation.update).not.toHaveBeenCalled();
+    expect(h.tx.cart.update).not.toHaveBeenCalled();
+  });
+  it('preserves previously saved dishes when adding another confirmed selection', async () => {
+    const h = setup(); h.set({ status: 'CONFIRMED', itemAmountVnd: 45000n, items: [{ productId: '8', quantity: 1, subtotalVnd: '45000' }] });
+    const result = await h.service.addDishes(2n, 11n, 'confirmed-dishes-2', { cartId: '10', expectedAmountVnd: '100000' });
+    expect(result.items).toHaveLength(2);
+    expect(result.items).toEqual(expect.arrayContaining([{ productId: '8', quantity: 1, subtotalVnd: '45000' }]));
+    expect(result.itemAmountVnd).toBe(145000n);
+  });
   it('creates a seats-only request without a dining order, table session or kitchen task and without capacity limits', async () => {
     const h = setup();
     await h.service.create(2n, 'reservation-key-1', { ...h.dto, guestCount: 1000 });

@@ -992,6 +992,7 @@ model DiningReservation {
   order            Order? @relation(fields: [orderId], references: [id])
   tableSession     TableSession? @relation(fields: [tableSessionId], references: [id])
   assignedTable    DiningTable? @relation("AssignedReservationTable", fields: [assignedTableId], references: [id], onDelete: SetNull)
+  chatConversation OrderChatConversation?
   pushEvent        CashierPushEvent?
   pushDeliveries   CashierPushDelivery[]
 
@@ -1217,7 +1218,8 @@ model DailyReportLog {
 
 model OrderChatConversation {
   id                  BigInt                      @id @default(autoincrement())
-  orderId             BigInt                      @unique @map("order_id")
+  orderId             BigInt?                     @unique @map("order_id")
+  reservationId       BigInt?                     @unique @map("reservation_id")
   merchantId          BigInt                      @map("merchant_id")
   customerId          BigInt                      @map("customer_id")
   status              OrderChatConversationStatus @default(ACTIVE)
@@ -1230,7 +1232,8 @@ model OrderChatConversation {
   createdAt           DateTime                    @default(now()) @map("created_at")
   updatedAt           DateTime                    @updatedAt @map("updated_at")
 
-  order       Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order       Order?             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  reservation DiningReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   merchant    Merchant           @relation(fields: [merchantId], references: [id], onDelete: Restrict)
   customer    User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lastMessage OrderChatMessage?  @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
@@ -1246,7 +1249,7 @@ model OrderChatConversation {
 model OrderChatMessage {
   id             BigInt              @id @default(autoincrement())
   conversationId BigInt              @map("conversation_id")
-  orderId        BigInt              @map("order_id")
+  orderId        BigInt?             @map("order_id")
   senderType     OrderChatSenderType @map("sender_type")
   senderId       BigInt              @map("sender_id")
   content        String              @db.Text
@@ -1258,7 +1261,7 @@ model OrderChatMessage {
   createdAt      DateTime            @default(now()) @map("created_at")
 
   conversation              OrderChatConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  order                     Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order                     Order?                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
   lastMessageOfConversation OrderChatConversation? @relation("ConversationLastMessage")
 
   @@index([conversationId, createdAt])

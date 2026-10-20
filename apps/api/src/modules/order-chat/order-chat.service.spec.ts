@@ -26,6 +26,7 @@ describe('OrderChatService staff-origin order isolation', () => {
       order: { status: 'PENDING_ACCEPTANCE' },
     };
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       order: { findFirst: jest.fn().mockResolvedValue(loadedOrder) },
       orderChatConversation: {
         upsert: jest.fn().mockResolvedValue(conversation),

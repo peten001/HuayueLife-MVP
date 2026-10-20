@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { reservationText } from '@huayue-life/shared';
 import { useI18n } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
 
 const appConfig = useAppConfigStore();
 const cartStore = useCartStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const amount = computed(() => Number(cartStore.cart?.itemAmountVnd ?? 0));
 const quantity = computed(() => cartStore.cart?.totalQuantity ?? 0);
 const hasItems = computed(() => quantity.value > 0);
@@ -35,7 +36,7 @@ function openCart() {
       </view>
     </view>
     <button :disabled="!hasItems" @click="openCart">
-      {{ hasItems ? t('checkoutShort') : t('selectItems') }}
+      {{ hasItems ? (cartStore.context?.reservation || cartStore.context?.orderType === 'DELIVERY' ? reservationText('selectionDone', locale) : t('checkoutShort')) : t('selectItems') }}
     </button>
   </view>
 </template>

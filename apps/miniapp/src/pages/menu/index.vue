@@ -4,6 +4,7 @@ import { reservationText } from '@huayue-life/shared';
 import { onLoad, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
+import { getDiningReservation } from '@/api/reservations';
 import {
   categoryName,
   merchantName,
@@ -14,6 +15,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
+import { useAuthStore } from '@/stores/auth';
 import { useCartStore, type ContextSwitchResult } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 import { formatProductUnitSuffix } from '@/utils/product-unit-display';
@@ -26,6 +28,7 @@ const menu = ref<MenuResponse | null>(null);
 const merchantId = ref('');
 const orderType = ref<OrderType>('PICKUP');
 const reservation = ref(false);
+const diningReservationId = ref('');
 const tableNo = ref('');
 const tableName = ref('');
 const tableToken = ref('');
@@ -128,6 +131,25 @@ onLoad(async (options) => {
   merchantId.value = String(options?.merchantId ?? '');
   orderType.value = (String(options?.orderType ?? 'PICKUP') as OrderType);
   reservation.value = orderType.value === 'PICKUP' || String(options?.reservation ?? '') === '1';
+  diningReservationId.value = String(options?.reservationId ?? '');
+  if (reservation.value && orderType.value === 'DINE_IN') {
+    if (!/^\d+$/.test(diningReservationId.value)) {
+      uni.redirectTo({ url: `/pages/reservation/create?merchantId=${merchantId.value}&kind=DINE_IN` });
+      return;
+    }
+    try {
+      await useAuthStore().ensureLogin();
+      const booking = await getDiningReservation(diningReservationId.value);
+      if (booking.status !== 'CONFIRMED' || booking.proposedScheduledFor || booking.merchant.id !== merchantId.value) {
+        uni.redirectTo({ url: `/pages/reservation/detail?id=${encodeURIComponent(diningReservationId.value)}` });
+        return;
+      }
+    } catch {
+      uni.showToast({ title: reservationText('loadError', locale.value), icon: 'none' });
+      uni.navigateBack();
+      return;
+    }
+  }
   tableNo.value = decodeURIComponent(String(options?.tableNo ?? ''));
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
@@ -292,6 +314,7 @@ function buildContext(loadedMenu?: MenuResponse): CartContext {
     merchantName: loadedMenu ? merchantName(loadedMenu.merchant, locale.value) : fallbackMerchantName,
     orderType: orderType.value,
     reservation: reservation.value || undefined,
+    diningReservationId: diningReservationId.value || undefined,
   };
   if (orderType.value === 'DINE_IN') {
     context.tableToken = tableToken.value || undefined;
@@ -408,7 +431,7 @@ function openProduct(product: Product) {
   uni.navigateTo({
     url:
       `/pages/product/detail?id=${product.id}` +
-      `&merchantId=${merchantId.value}&orderType=${orderType.value}${tableQuery}${reservation.value ? '&reservation=1' : ''}`,
+      `&merchantId=${merchantId.value}&orderType=${orderType.value}${tableQuery}${reservation.value ? '&reservation=1' : ''}${diningReservationId.value ? `&reservationId=${encodeURIComponent(diningReservationId.value)}` : ''}`,
   });
 }
 

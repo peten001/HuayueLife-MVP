@@ -327,7 +327,7 @@ async function bootstrapCheckout() {
       await authStore.ensureLogin();
       await cartStore.load();
       if (context.value?.reservation) {
-        uni.redirectTo({ url: `/pages/reservation/create?merchantId=${context.value.merchantId}&kind=${context.value.orderType}` });
+        uni.redirectTo({ url: context.value.diningReservationId ? `/pages/reservation/dishes?id=${encodeURIComponent(context.value.diningReservationId)}` : `/pages/reservation/create?merchantId=${context.value.merchantId}&kind=${context.value.orderType}` });
         return;
       }
       if (!checkoutInitialized) {

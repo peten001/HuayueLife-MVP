@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { reservationErrorText, reservationText, type ArrivalReservation } from '@huayue-life/shared';
+import { reservationErrorText, reservationText, type ArrivalReservation, type ArrivalChatSummary } from '@huayue-life/shared';
 import { listReservations, updateReservation, type ReservationAction } from '@/api/reservations';
 import { useAuthStore } from './auth';
 import { useI18n } from '@/i18n';
@@ -22,6 +22,8 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
   let merchantSnapshot = '';
   let seen = new Set<string>();
   const pending = computed(() => reservations.value.filter(row => row.status === 'PENDING'));
+  const unread = computed(() => reservations.value.filter(row => (row.chatConversation?.merchantUnreadCount ?? 0) > 0));
+  const attentionCount = computed(() => reservations.value.filter(row => row.status === 'PENDING' || (row.chatConversation?.merchantUnreadCount ?? 0) > 0).length);
   const pickupDue = computed(() => arrivals.value.filter(row => row.kind === 'PICKUP' && row.status === 'CONFIRMED'
     && pickupPreparationDue(row.scheduledFor, serverNow.value)));
   function load() {
@@ -71,6 +73,10 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
       throw caught;
     } finally { if (mutationGeneration === generation) actionId.value = ''; }
   }
+  function updateChatSummary(id: string, conversation: ArrivalChatSummary | null) {
+    if (!conversation) return;
+    arrivals.value = arrivals.value.map(row => row.kind === 'DINE_IN' && row.id === id ? { ...row, chatConversation: conversation } : row);
+  }
   function reset() { generation += 1; arrivals.value = []; error.value = ''; actionId.value = ''; inFlight = null; loading.value = false; seen.clear(); merchantSnapshot = ''; }
-  return { reservations, byTable, loading, error, actionId, serverNow, pending, pickupDue, load, act, reset };
+  return { reservations, byTable, loading, error, actionId, serverNow, pending, unread, attentionCount, updateChatSummary, pickupDue, load, act, reset };
 });

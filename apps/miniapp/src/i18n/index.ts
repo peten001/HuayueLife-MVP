@@ -265,10 +265,10 @@ const zh = {
   earlier: '更早',
   viewedAt: '最近浏览',
   viewCount: '浏览 {count} 次',
-  messagesSubtitle: '查看商家通知和系统通知',
+  messagesSubtitle: '配送、自取和用餐预约，都能联系商家',
   merchantNoticesTab: '商家通知',
   systemNoticesTab: '系统通知',
-  merchantNoticesDescription: '查看商家服务信息和通知',
+  merchantNoticesDescription: '临时改计划，可在对应订单或预约中发消息与商家沟通',
   systemNoticesDescription: '查看平台通知和系统提醒',
   merchantServiceRecords: '商家服务记录',
   openConversation: '进入沟通',
@@ -769,10 +769,10 @@ const vi: typeof zh = {
   earlier: 'Trước đó',
   viewedAt: 'Xem gần nhất',
   viewCount: 'Đã xem {count} lần',
-  messagesSubtitle: 'Xem thông báo từ cửa hàng và thông báo hệ thống',
+  messagesSubtitle: 'Nhắn cửa hàng về giao hàng, lấy món hoặc đặt bàn',
   merchantNoticesTab: 'Thông báo cửa hàng',
   systemNoticesTab: 'Thông báo hệ thống',
-  merchantNoticesDescription: 'Xem thông tin dịch vụ và thông báo từ cửa hàng',
+  merchantNoticesDescription: 'Nếu thay đổi kế hoạch, hãy nhắn tin trong đơn hàng hoặc đặt bàn tương ứng',
   systemNoticesDescription: 'Xem thông báo từ nền tảng và nhắc nhở hệ thống',
   merchantServiceRecords: 'Lịch sử dịch vụ cửa hàng',
   openConversation: 'Liên hệ',
@@ -1272,10 +1272,10 @@ const en: typeof zh = {
   earlier: 'Earlier',
   viewedAt: 'Last viewed',
   viewCount: 'Viewed {count} times',
-  messagesSubtitle: 'View merchant notices and system notifications',
+  messagesSubtitle: 'Contact stores about delivery, pickup and table reservations',
   merchantNoticesTab: 'Merchant notices',
   systemNoticesTab: 'System notifications',
-  merchantNoticesDescription: 'View merchant service information and notices',
+  merchantNoticesDescription: 'Message the store from your order or reservation if your plans change',
   systemNoticesDescription: 'View platform notices and system reminders',
   merchantServiceRecords: 'Merchant service records',
   openConversation: 'Contact merchant',
@@ -1817,8 +1817,8 @@ export function productSnapshotName(
     | string
     | {
         productNameZhSnapshot?: string;
-        productNameViSnapshot?: string;
-        productNameEnSnapshot?: string;
+        productNameViSnapshot?: string | null;
+        productNameEnSnapshot?: string | null;
       },
   current = locale.value,
 ) {

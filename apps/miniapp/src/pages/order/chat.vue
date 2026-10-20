@@ -72,7 +72,10 @@ const merchantDisplayName = computed(() => {
   return merchantName(conversation.value?.merchant, locale.value);
 });
 
-const order = computed(() => conversation.value?.order ?? null);
+const order = computed(() => {
+  const reservation = conversation.value?.reservation;
+  return reservation ? { ...reservation, orderNo: reservation.reservationNo } : conversation.value?.order ?? null;
+});
 
 type TimelineItem =
   | { type: 'date'; key: string; label: string }
@@ -297,6 +300,7 @@ function isClosedOrderStatus(status: string | undefined | null) {
     'CANCELED',
     'REFUNDED',
     'REJECTED',
+    'NO_SHOW',
   ].includes(normalized);
 }
 
@@ -578,7 +582,7 @@ function handleGlobalKeyboardHeightChange(result: { height?: number }) {
 }
 
 onLoad((options) => {
-  updateOrderId(String(options?.orderId ?? ''));
+  updateOrderId(options?.reservationId ? `reservation:${String(options.reservationId)}` : String(options?.orderId ?? ''));
   readonly.value = String(options?.readonly ?? '') === '1';
   bindKeyboardListener();
   void loadConversation(true);
@@ -608,7 +612,7 @@ onUnload(() => {
   unbindKeyboardListener();
 });
 
-usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.value.order.orderNo}` : t('orderChat'));
+usePageTitle(() => conversation.value ? `${t('orderChat')} · #${order.value?.orderNo ?? ''}` : t('orderChat'));
 </script>
 
 <template>
@@ -619,7 +623,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
           <text class="chat-title">{{ t('orderChat') }}</text>
           <text class="chat-subtitle">
             <template v-if="conversation">
-              {{ merchantDisplayName }} · #{{ conversation.order.orderNo }}
+              {{ merchantDisplayName }} · #{{ order?.orderNo }}
             </template>
             <template v-else>
               {{ t('loading') }}

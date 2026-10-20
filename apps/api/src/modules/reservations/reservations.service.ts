@@ -9,7 +9,7 @@ import { MerchantOrdersService } from '../merchant-orders/merchant-orders.servic
 import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import { OrderCreatorInvariantService } from '../orders/order-creator-invariant.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
-import { CreateDiningReservationDto, ReservationActionDto, ReservationTimeReplyDto } from './reservation.dto';
+import { AddReservationDishesDto, CreateDiningReservationDto, ReservationActionDto, ReservationTimeReplyDto } from './reservation.dto';
 import { assertReservationKey, parseReservationTime } from './reservation-policy';
 
 type ReservationItem = {
@@ -23,11 +23,12 @@ const merchantSelect = {
   latitude: true, longitude: true,
 } satisfies Prisma.MerchantSelect;
 const diningInclude = {
+  chatConversation: { include: { lastMessage: true } },
   merchant: { select: merchantSelect },
   tableSession: { include: { table: true } },
 } satisfies Prisma.DiningReservationInclude;
 type DiningRow = Prisma.DiningReservationGetPayload<{ include: typeof diningInclude }>;
-const pickupInclude = { merchant: { select: merchantSelect }, items: true } satisfies Prisma.OrderInclude;
+const pickupInclude = { chatConversation: { include: { lastMessage: true } }, merchant: { select: merchantSelect }, items: true } satisfies Prisma.OrderInclude;
 type PickupRow = Prisma.OrderGetPayload<{ include: typeof pickupInclude }>;
 
 @Injectable()
@@ -117,6 +118,56 @@ export class ReservationsService {
       where: { userId }, include: diningInclude, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     return rows.map(row => this.serializeDining(row));
+  }
+
+  /** Add the confirmed cart to the original booking, without creating a bill or kitchen task. */
+  async addDishes(userId: bigint, id: bigint, key: string, dto: AddReservationDishesDto, retryCount = 0): Promise<ReturnType<ReservationsService['serializeDining']>> {
+    this.appConfig.assertOrderingEnabled();
+    assertReservationKey(key);
+    try {
+      return await this.prisma.$transaction(async tx => {
+        // Seating also locks this row: it sees either all of these dishes or none.
+        await this.lockDining(tx, id);
+        const row = await tx.diningReservation.findFirst({ where: { id, userId }, include: diningInclude });
+        if (!row) throw new NotFoundException('预约不存在');
+        const audit = row.audit as Prisma.JsonArray;
+        if (audit.some(event => event && typeof event === 'object' && !Array.isArray(event)
+          && event.action === 'DISHES_ADDED' && event.requestKey === key)) return this.serializeDining(row);
+        if (row.status !== 'CONFIRMED') throw new ConflictException('请等待商家确认预约后再点菜');
+        if (row.proposedScheduledFor) throw new ConflictException('请先处理预约时间变更，再点菜');
+        await this.cart.resolveContext(tx, { merchantId: row.merchantId.toString(), orderType: 'DINE_IN', reservation: true });
+        const cartId = BigInt(dto.cartId);
+        await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} AND user_id = ${userId} AND status = 'ACTIVE' FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM cart_items WHERE cart_id = ${cartId} FOR UPDATE`;
+        const cart = await tx.cart.findFirst({
+          where: { id: cartId, userId, merchantId: row.merchantId, orderType: 'DINE_IN', tableId: null, status: 'ACTIVE', expiresAt: { gt: new Date() } },
+          include: { items: { include: { product: { include: { category: true } } } } },
+        });
+        if (!cart?.items.length) throw new ConflictException('预选菜购物车已失效，请重新选菜');
+        const items: ReservationItem[] = cart.items.map(item => {
+          const p = item.product;
+          if (p.merchantId !== row.merchantId || p.status !== 'ON_SALE' || p.deletedAt || p.productType !== 'FOOD' || !p.category.isActive) {
+            throw new ConflictException('预选菜已售罄或下架，请重新选菜');
+          }
+          return { productId: p.id.toString(), productNameZhSnapshot: p.nameZh, productNameViSnapshot: p.nameVi,
+            productNameEnSnapshot: p.nameEn, imageUrlSnapshot: p.imageUrl, quantity: item.quantity,
+            unitPriceVnd: p.priceVnd.toString(), subtotalVnd: (p.priceVnd * BigInt(item.quantity)).toString(), remark: item.remark };
+        });
+        const amount = items.reduce((total, item) => total + BigInt(item.subtotalVnd), 0n);
+        if (amount !== BigInt(dto.expectedAmountVnd)) throw new ConflictException('预选菜价格已变化，请刷新后重新确认');
+        const updated = await tx.diningReservation.update({ where: { id }, data: {
+          items: [...(row.items as ReservationItem[]), ...items], itemAmountVnd: row.itemAmountVnd + amount,
+          audit: this.audit(row, 'DISHES_ADDED', { userId: userId.toString(), requestKey: key, cartId: dto.cartId }),
+        }, include: diningInclude });
+        await tx.cart.update({ where: { id: cartId }, data: { status: 'CHECKED_OUT' } });
+        return this.serializeDining(updated);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && retryCount < 2) {
+        return this.addDishes(userId, id, key, dto, retryCount + 1);
+      }
+      throw error;
+    }
   }
 
   async getUser(userId: bigint, id: bigint) {

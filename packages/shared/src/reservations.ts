@@ -1,9 +1,19 @@
 export type ArrivalKind = 'PICKUP' | 'DINE_IN';
 export type ArrivalStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+export interface ArrivalChatSummary {
+  id: string;
+  status: 'ACTIVE' | 'CLOSED';
+  customerUnreadCount: number;
+  merchantUnreadCount: number;
+  lastMessageAt?: string | null;
+  lastMessageId?: string | null;
+  lastMessage?: { content: string; messageType?: 'TEXT' | 'IMAGE' | 'LOCATION' } | null;
+}
 export interface ArrivalReservation {
   id: string;
   kind: ArrivalKind;
   reservationNo: string;
+  chatConversation?: ArrivalChatSummary | null;
   status: ArrivalStatus;
   scheduledFor: string | null;
   proposedScheduledFor?: string | null;
@@ -35,6 +45,12 @@ export interface ArrivalReservation {
 }
 
 const copy = {
+  callStore: ['致电商家', 'Gọi cửa hàng', 'Call store'],
+  messageStore: ['联系商家', 'Nhắn cửa hàng', 'Message store'],
+  newMessages: ['新消息', 'Tin nhắn mới', 'New messages'],
+  chatEndedHint: ['预约已结束，可查看聊天记录', 'Đặt trước đã kết thúc, bạn có thể xem lịch sử trò chuyện', 'This reservation has ended. Chat history is available'],
+  chatHistory: ['聊天记录', 'Lịch sử trò chuyện', 'Chat history'],
+  chatPlanHint: ['临时改计划，可发消息与商家沟通', 'Nếu thay đổi kế hoạch, hãy nhắn tin cho cửa hàng', 'Message the store if your plans change'],
   arrival: ['预约到店', 'Đặt trước tại cửa hàng', 'Reserve a visit'],
   pickup: ['打包自取', 'Đặt món mang về', 'Pickup'],
   dineIn: ['到店用餐', 'Đặt bàn', 'Dine in'],
@@ -66,6 +82,20 @@ const copy = {
   remarkPlaceholder: ['口味、座位需求等，可选填', 'Khẩu vị, yêu cầu chỗ ngồi… (không bắt buộc)', 'Dietary or seating requests (optional)'],
   preselected: ['预选餐品', 'Món đã chọn trước', 'Preselected dishes'],
   selectDishes: ['提前选菜', 'Chọn món trước', 'Choose dishes ahead'],
+  chooseAfterConfirmation: ['商家确认预约后，可在预约详情提前点菜', 'Sau khi cửa hàng xác nhận, bạn có thể chọn món trong chi tiết đặt bàn', 'Choose dishes from your reservation after the store confirms'],
+  waitForConfirmation: ['请等待商家确认预约后再点菜', 'Vui lòng chờ cửa hàng xác nhận trước khi chọn món', 'Wait for the store to confirm before choosing dishes'],
+  replyTimeBeforeDishes: ['请先处理预约时间变更，再点菜', 'Vui lòng xử lý thay đổi giờ hẹn trước khi chọn món', 'Respond to the time change before choosing dishes'],
+  addDishes: ['继续选菜', 'Chọn thêm món', 'Choose more dishes'],
+  confirmDishes: ['确认餐品', 'Xác nhận món', 'Confirm dishes'],
+  addedDishes: ['本次选菜', 'Món chọn lần này', 'Dishes selected now'],
+  dishesSaved: ['餐品已保存到本次预约', 'Đã lưu món vào đặt bàn này', 'Dishes saved to this reservation'],
+  uncertainDishes: ['提交结果尚未确认，重试会核对原餐品，避免重复添加。', 'Chưa xác định được kết quả. Thử lại để kiểm tra, không thêm món trùng.', 'The result is unconfirmed. Retry checks the original selection without adding it twice.'],
+  addDishesHint: ['餐品将加入本次预约，到店确认后安排制作', 'Món sẽ được thêm vào đặt bàn, chế biến sau khi bạn đến và xác nhận', 'Dishes join this reservation and are prepared after you arrive and confirm'],
+  selectionDone: ['选好了', 'Chọn xong', 'Done selecting'],
+  confirmPickup: ['确认订单', 'Xác nhận đơn', 'Confirm order'],
+  confirmDineIn: ['预约用餐', 'Đặt bàn', 'Reserve a table'],
+  contactInfo: ['联系信息', 'Thông tin liên hệ', 'Contact details'],
+  optional: ['选填', 'Không bắt buộc', 'Optional'],
   assignedTable: ['安排桌台', 'Bàn được xếp', 'Assigned table'],
   tablePending: ['桌台待安排', 'Chưa xếp bàn', 'Table to be assigned'],
   assignTable: ['安排／调整桌台', 'Xếp hoặc đổi bàn', 'Assign or change table'],

@@ -14,6 +14,7 @@ storage.set('huayue_locale', params.get('locale') || 'zh');
 const routePages: Record<string, string> = {
   '/pages/merchant/detail': 'merchant', '/pages/reservation/create': 'create', '/pages/reservation/detail': 'reservation',
   '/pages/order/detail': 'order', '/pages/orders/index': 'orders', '/pages/menu/index': 'menu', '/pages/cart/index': 'cart',
+  '/pages/reservation/dishes': 'dishes', '/pages/messages/index': 'messages', '/pages/order/chat': 'chat',
 };
 function navigate(options: { url: string }) {
   hideCallbacks.forEach(fn => fn());
@@ -28,8 +29,10 @@ function navigate(options: { url: string }) {
   removeStorageSync: (key: string) => localStorage.removeItem(`arrival-preview:${key}`),
   request: async (options: any) => {
     try {
-      const response = await fetch(options.url, { method: options.method || 'GET', headers: options.header,
-        body: options.data === undefined ? undefined : JSON.stringify(options.data) });
+      const method = options.method || 'GET';
+      const query = method === 'GET' && options.data ? `?${new URLSearchParams(options.data)}` : '';
+      const response = await fetch(options.url + query, { method, headers: options.header,
+        body: method === 'GET' || options.data === undefined ? undefined : JSON.stringify(options.data) });
       options.success({ statusCode: response.status, data: await response.json() });
     } catch (caught) { options.fail({ errMsg: caught instanceof Error ? caught.message : 'Network error' }); }
   },
@@ -38,8 +41,9 @@ function navigate(options: { url: string }) {
   setNavigationBarTitle: ({ title }: any) => { document.title = title; },
   showModal: (options: any) => options.success({ confirm: true, cancel: false }),
   showToast: (options: any) => { const el = document.createElement('div'); el.className = 'preview-toast'; el.textContent = options.title; document.body.append(el); setTimeout(() => el.remove(), 2500); },
-  getSystemInfoSync: () => ({ statusBarHeight: 24, windowWidth: width, platform: 'devtools' }),
-  getWindowInfo: () => ({ statusBarHeight: 24, windowWidth: width }),
+  getSystemInfoSync: () => ({ statusBarHeight: 24, windowWidth: width, windowHeight: window.innerHeight, screenHeight: window.innerHeight, safeArea: { bottom: window.innerHeight }, platform: 'devtools' }),
+  getWindowInfo: () => ({ statusBarHeight: 24, windowWidth: width, windowHeight: window.innerHeight, screenHeight: window.innerHeight, safeArea: { bottom: window.innerHeight } }),
+  onKeyboardHeightChange: () => {}, offKeyboardHeightChange: () => {}, hideKeyboard: () => {},
   getLaunchOptionsSync: () => ({ scene: 1001 }),
   makePhoneCall: () => {}, openLocation: () => {}, previewImage: () => {},
 };
@@ -54,6 +58,9 @@ const pages = {
   orders: () => import('../../src/pages/orders/index.vue'),
   menu: () => import('../../src/pages/menu/index.vue'),
   cart: () => import('../../src/pages/cart/index.vue'),
+  dishes: () => import('../../src/pages/reservation/dishes.vue'),
+  messages: () => import('../../src/pages/messages/index.vue'),
+  chat: () => import('../../src/pages/order/chat.vue'),
 };
 const loader = pages[(params.get('page') || 'merchant') as keyof typeof pages] || pages.merchant;
 const app = createApp((await loader()).default); app.use(createPinia());

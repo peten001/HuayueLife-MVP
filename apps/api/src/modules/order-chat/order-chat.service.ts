@@ -10,7 +10,6 @@ import {
   OrderChatMessage,
   OrderChatMessageType,
   OrderChatSenderType,
-  OrderStatus,
   Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -29,30 +28,61 @@ type ChatOrder = {
   id: bigint;
   merchantId: bigint;
   userId: bigint | null;
-  orderNo: string;
-  status: OrderStatus;
+  orderNo?: string;
+  kind?: ChatKind;
+  status: string;
   createdAt: Date;
 };
 
 type CustomerOrder = ChatOrder & { userId: bigint };
 
 type ChatSide = 'CUSTOMER' | 'MERCHANT';
+type ChatKind = 'ORDER' | 'RESERVATION';
+
+const conversationInclude = {
+  reservation: { select: { id: true, reservationNo: true, status: true, scheduledFor: true, createdAt: true,
+    tableSession: { select: { status: true, voidedAt: true } } } },
+  order: {
+    select: {
+      id: true,
+      orderNo: true,
+      status: true,
+      createdAt: true,
+    },
+  },
+  merchant: {
+    select: {
+      id: true,
+      nameZh: true,
+      logoUrl: true,
+    },
+  },
+  customer: {
+    select: {
+      id: true,
+      nickname: true,
+      phone: true,
+      avatarUrl: true,
+    },
+  },
+  lastMessage: true,
+} satisfies Prisma.OrderChatConversationInclude;
 
 @Injectable()
 export class OrderChatService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getCustomerConversation(userId: bigint, orderId: bigint) {
+  async getCustomerConversation(userId: bigint, orderId: bigint, kind: ChatKind = 'ORDER') {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
       const conversation = await this.ensureConversation(tx, order);
       return this.loadConversation(tx, conversation.id);
     });
   }
 
-  async getMerchantConversation(merchantId: bigint, orderId: bigint) {
+  async getMerchantConversation(merchantId: bigint, orderId: bigint, kind: ChatKind = 'ORDER') {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
       const conversation = await this.ensureConversation(tx, order);
       return this.loadConversation(tx, conversation.id);
     });
@@ -62,9 +92,10 @@ export class OrderChatService {
     userId: bigint,
     orderId: bigint,
     query: ListOrderChatMessagesQueryDto,
+    kind: ChatKind = 'ORDER',
   ) {
     const conversation = await this.prisma.$transaction(async (tx) => {
-      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
       return this.ensureConversation(tx, order);
     });
     return this.listMessages(conversation.id, query);
@@ -74,9 +105,10 @@ export class OrderChatService {
     merchantId: bigint,
     orderId: bigint,
     query: ListOrderChatMessagesQueryDto,
+    kind: ChatKind = 'ORDER',
   ) {
     const conversation = await this.prisma.$transaction(async (tx) => {
-      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
       return this.ensureConversation(tx, order);
     });
     return this.listMessages(conversation.id, query);
@@ -86,12 +118,13 @@ export class OrderChatService {
     userId: bigint,
     orderId: bigint,
     dto: SendOrderChatMessageDto,
+    kind: ChatKind = 'ORDER',
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
       this.ensureCanSend(order.status);
       const conversation = await this.ensureConversation(tx, order);
-      const message = await this.createMessage(tx, conversation.id, order.id, {
+      const message = await this.createMessage(tx, conversation.id, order, {
         senderType: 'CUSTOMER',
         senderId: userId,
         ...this.messageInput(dto),
@@ -106,12 +139,13 @@ export class OrderChatService {
     staffId: bigint,
     orderId: bigint,
     dto: SendOrderChatMessageDto,
+    kind: ChatKind = 'ORDER',
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
       this.ensureCanSend(order.status);
       const conversation = await this.ensureConversation(tx, order);
-      const message = await this.createMessage(tx, conversation.id, order.id, {
+      const message = await this.createMessage(tx, conversation.id, order, {
         senderType: 'MERCHANT',
         senderId: staffId,
         ...this.messageInput(dto),
@@ -121,17 +155,17 @@ export class OrderChatService {
     });
   }
 
-  async sendCustomerImage(userId: bigint, orderId: bigint, file?: ChatImageUpload) {
+  async sendCustomerImage(userId: bigint, orderId: bigint, file?: ChatImageUpload, kind: ChatKind = 'ORDER') {
     await this.prisma.$transaction(async (tx) => {
-      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
       this.ensureCanSend(order.status);
     });
     return this.sendImage(file, (mediaUrl) =>
       this.prisma.$transaction(async (tx) => {
-        const order = await this.requireCustomerOrder(tx, userId, orderId);
+        const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
         this.ensureCanSend(order.status);
         const conversation = await this.ensureConversation(tx, order);
-        const message = await this.createMessage(tx, conversation.id, order.id, {
+        const message = await this.createMessage(tx, conversation.id, order, {
           senderType: 'CUSTOMER', senderId: userId,
           content: '[图片]', messageType: 'IMAGE', mediaUrl,
         });
@@ -141,17 +175,17 @@ export class OrderChatService {
     );
   }
 
-  async sendMerchantImage(merchantId: bigint, staffId: bigint, orderId: bigint, file?: ChatImageUpload) {
+  async sendMerchantImage(merchantId: bigint, staffId: bigint, orderId: bigint, file?: ChatImageUpload, kind: ChatKind = 'ORDER') {
     await this.prisma.$transaction(async (tx) => {
-      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
       this.ensureCanSend(order.status);
     });
     return this.sendImage(file, (mediaUrl) =>
       this.prisma.$transaction(async (tx) => {
-        const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+        const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
         this.ensureCanSend(order.status);
         const conversation = await this.ensureConversation(tx, order);
-        const message = await this.createMessage(tx, conversation.id, order.id, {
+        const message = await this.createMessage(tx, conversation.id, order, {
           senderType: 'MERCHANT', senderId: staffId,
           content: '[图片]', messageType: 'IMAGE', mediaUrl,
         });
@@ -210,17 +244,17 @@ export class OrderChatService {
     }
   }
 
-  async markCustomerRead(userId: bigint, orderId: bigint) {
+  async markCustomerRead(userId: bigint, orderId: bigint, kind: ChatKind = 'ORDER') {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      const order = await this.requireCustomerOrder(tx, userId, orderId, kind);
       const conversation = await this.ensureConversation(tx, order);
       return this.markRead(tx, conversation, 'CUSTOMER');
     });
   }
 
-  async markMerchantRead(merchantId: bigint, orderId: bigint) {
+  async markMerchantRead(merchantId: bigint, orderId: bigint, kind: ChatKind = 'ORDER') {
     return this.prisma.$transaction(async (tx) => {
-      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId, kind);
       const conversation = await this.ensureConversation(tx, order);
       return this.markRead(tx, conversation, 'MERCHANT');
     });
@@ -235,14 +269,14 @@ export class OrderChatService {
         merchantId,
         ...(query.unreadOnly ? { merchantUnreadCount: { gt: 0 } } : {}),
       },
-      include: this.conversationInclude,
+      include: conversationInclude,
       orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }, { id: 'desc' }],
     });
 
     const staleClosedIds = conversations
       .filter(
         (conversation) =>
-          this.isFinalStatus(conversation.order.status) &&
+          this.isFinalStatus(this.contextStatus(conversation)) &&
           conversation.status !== 'CLOSED',
       )
       .map((conversation) => conversation.id);
@@ -254,30 +288,18 @@ export class OrderChatService {
       });
     }
 
-    return conversations.map((conversation) => ({
-      ...conversation,
-      status: this.resolveConversationStatus(
-        conversation.status,
-        conversation.order.status,
-      ),
-    }));
+    return conversations.map((conversation) => this.serializeConversation(conversation));
   }
 
   private async loadConversation(tx: Prisma.TransactionClient, conversationId: bigint) {
     const conversation = await tx.orderChatConversation.findUnique({
       where: { id: conversationId },
-      include: this.conversationInclude,
+      include: conversationInclude,
     });
     if (!conversation) {
       throw new NotFoundException('Conversation not found');
     }
-    return {
-      ...conversation,
-      status: this.resolveConversationStatus(
-        conversation.status,
-        conversation.order.status,
-      ),
-    };
+    return this.serializeConversation(conversation);
   }
 
   private async listMessages(
@@ -337,9 +359,9 @@ export class OrderChatService {
       });
     }
     const conversation = await tx.orderChatConversation.upsert({
-      where: { orderId: order.id },
+      where: order.kind === 'RESERVATION' ? { reservationId: order.id } : { orderId: order.id },
       create: {
-        orderId: order.id,
+        ...(order.kind === 'RESERVATION' ? { reservationId: order.id } : { orderId: order.id }),
         merchantId: order.merchantId,
         customerId: order.userId,
         status: this.resolveConversationStatusFromOrder(order.status),
@@ -347,7 +369,7 @@ export class OrderChatService {
       update: {
         status: this.resolveConversationStatusFromOrder(order.status),
       },
-      include: this.conversationInclude,
+      include: conversationInclude,
     });
 
     return conversation;
@@ -356,7 +378,7 @@ export class OrderChatService {
   private async createMessage(
     tx: Prisma.TransactionClient,
     conversationId: bigint,
-    orderId: bigint,
+    order: ChatOrder,
     input: {
       senderType: OrderChatSenderType;
       senderId: bigint;
@@ -370,7 +392,7 @@ export class OrderChatService {
     const message = await tx.orderChatMessage.create({
       data: {
         conversationId,
-        orderId,
+        orderId: order.kind === 'RESERVATION' ? null : order.id,
         senderType: input.senderType,
         senderId: input.senderId,
         content: input.content,
@@ -458,7 +480,7 @@ export class OrderChatService {
     return this.loadConversation(tx, conversation.id);
   }
 
-  private ensureCanSend(status: OrderStatus) {
+  private ensureCanSend(status: string) {
     if (this.isFinalStatus(status)) {
       throw new ConflictException('已完成或已取消订单不允许发送消息');
     }
@@ -466,7 +488,7 @@ export class OrderChatService {
 
   private resolveConversationStatus(
     conversationStatus: OrderChatConversationStatus,
-    orderStatus: OrderStatus,
+    orderStatus: string,
   ) {
     if (this.isFinalStatus(orderStatus)) {
       return 'CLOSED' as OrderChatConversationStatus;
@@ -474,21 +496,24 @@ export class OrderChatService {
     return conversationStatus;
   }
 
-  private resolveConversationStatusFromOrder(orderStatus: OrderStatus) {
+  private resolveConversationStatusFromOrder(orderStatus: string) {
     return this.isFinalStatus(orderStatus)
       ? ('CLOSED' as const)
       : ('ACTIVE' as const);
   }
 
-  private isFinalStatus(status: OrderStatus) {
-    return status === 'COMPLETED' || status === 'CANCELLED';
+  private isFinalStatus(status: string) {
+    return status === 'COMPLETED' || status === 'CANCELLED' || status === 'NO_SHOW';
   }
 
   private async requireCustomerOrder(
     tx: Prisma.TransactionClient,
     userId: bigint,
     orderId: bigint,
+    kind: ChatKind = 'ORDER',
   ) {
+    if (kind === 'RESERVATION') return this.requireReservation(tx, orderId, { userId });
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId} AND user_id = ${userId} FOR UPDATE`;
     const order = await tx.order.findFirst({
       where: { id: orderId, userId },
       select: this.orderSelect,
@@ -506,7 +531,10 @@ export class OrderChatService {
     tx: Prisma.TransactionClient,
     merchantId: bigint,
     orderId: bigint,
+    kind: ChatKind = 'ORDER',
   ) {
+    if (kind === 'RESERVATION') return this.requireReservation(tx, orderId, { merchantId });
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId} AND merchant_id = ${merchantId} FOR UPDATE`;
     const order = await tx.order.findFirst({
       where: { id: orderId, merchantId },
       select: this.orderSelect,
@@ -517,6 +545,44 @@ export class OrderChatService {
     return order;
   }
 
+  private async requireReservation(
+    tx: Prisma.TransactionClient, id: bigint, owner: { userId: bigint } | { merchantId: bigint },
+  ): Promise<CustomerOrder> {
+    // Lock before the first consistent read: the chat header and message history
+    // load concurrently, and Prisma's emulated upsert can otherwise race on MySQL.
+    if ('userId' in owner) {
+      await tx.$queryRaw`SELECT id FROM dining_reservations WHERE id = ${id} AND user_id = ${owner.userId} FOR UPDATE`;
+    } else {
+      await tx.$queryRaw`SELECT id FROM dining_reservations WHERE id = ${id} AND merchant_id = ${owner.merchantId} FOR UPDATE`;
+    }
+    const row = await tx.diningReservation.findFirst({
+      where: { id, ...owner },
+      select: { id: true, merchantId: true, userId: true, status: true, createdAt: true,
+        tableSession: { select: { status: true, voidedAt: true } } },
+    });
+    if (!row) throw new NotFoundException('预约不存在');
+    return { ...row, kind: 'RESERVATION', status: this.reservationStatus(row) };
+  }
+
+  private reservationStatus(row: { status: string; tableSession?: { status: string; voidedAt: Date | null } | null }) {
+    if (row.tableSession?.voidedAt) return 'CANCELLED';
+    return row.status === 'SEATED' && row.tableSession?.status === 'CLOSED' ? 'COMPLETED' : row.status;
+  }
+
+  private contextStatus(conversation: { order: { status: string } | null; reservation: { status: string; tableSession?: { status: string; voidedAt: Date | null } | null } | null }) {
+    if (conversation.reservation) return this.reservationStatus(conversation.reservation);
+    if (conversation.order) return conversation.order.status;
+    throw new NotFoundException('Conversation not found');
+  }
+
+  private serializeConversation(conversation: Prisma.OrderChatConversationGetPayload<{ include: typeof conversationInclude }>) {
+    const status = this.contextStatus(conversation);
+    return { ...conversation,
+      reservation: conversation.reservation ? { ...conversation.reservation, status, tableSession: undefined } : null,
+      status: this.resolveConversationStatus(conversation.status, status),
+    };
+  }
+
   private readonly orderSelect = {
     id: true,
     merchantId: true,
@@ -525,31 +591,4 @@ export class OrderChatService {
     status: true,
     createdAt: true,
   } satisfies Prisma.OrderSelect;
-
-  private readonly conversationInclude = {
-    order: {
-      select: {
-        id: true,
-        orderNo: true,
-        status: true,
-        createdAt: true,
-      },
-    },
-    merchant: {
-      select: {
-        id: true,
-        nameZh: true,
-        logoUrl: true,
-      },
-    },
-    customer: {
-      select: {
-        id: true,
-        nickname: true,
-        phone: true,
-        avatarUrl: true,
-      },
-    },
-    lastMessage: true,
-  } satisfies Prisma.OrderChatConversationInclude;
 }

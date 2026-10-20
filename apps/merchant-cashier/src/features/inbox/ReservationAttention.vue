@@ -7,7 +7,8 @@ const { locale, t } = useI18n();
 const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
 </script>
 <template>
-  <aside v-if="store.pending.length || store.pickupDue.length" class="reservation-attention" aria-live="polite">
+  <aside v-if="store.pending.length || store.pickupDue.length || store.unread.length" class="reservation-attention" aria-live="polite">
+    <RouterLink v-if="store.unread.length" :to="{ path: '/reservations', query: { status: 'ALL', reservationId: store.unread[0]!.id, pane: 'chat' } }">{{ rt('merchantTitle') }} · {{ rt('newMessages') }} <strong>{{ store.unread.length }}</strong> ›</RouterLink>
     <RouterLink v-if="store.pending.length" to="/reservations">{{ rt('merchantTitle') }} · {{ rt('PENDING') }} <strong>{{ store.pending.length }}</strong> ›</RouterLink>
     <RouterLink v-if="store.pickupDue.length" class="due" :to="{ path: '/pickup', query: { status: 'DUE' } }">{{ t('nav.pickup') }} · {{ rt('due') }} <strong>{{ store.pickupDue.length }}</strong> ›</RouterLink>
   </aside>

@@ -64,6 +64,20 @@ describe('cashier order chat API routing', () => {
     expect((imageCall?.[1]?.body as FormData).get('file')).toBe(file);
   });
 
+  it('routes namespaced reservation keys without confusing overlapping order IDs', async () => {
+    mocks.requestApi.mockResolvedValue({ id: 'message-1' });
+    await listMerchantOrderChatMessages('reservation:31', { cursor: '9', limit: 10 });
+    await sendMerchantOrderChatMessage('reservation:31', '临时改计划');
+    await sendMerchantOrderChatLocation('reservation:31', 21.281, 106.197);
+    await sendMerchantOrderChatImage('reservation:31', new File(['image'], 'test.jpg', { type: 'image/jpeg' }));
+    expect(mocks.requestApi.mock.calls.map(call => call[0])).toEqual([
+      '/merchant/reservations/31/chat/messages', '/merchant/reservations/31/chat/messages',
+      '/merchant/reservations/31/chat/messages', '/merchant/reservations/31/chat/images',
+    ]);
+    await sendMerchantOrderChatMessage('31', '自取');
+    expect(mocks.requestApi).toHaveBeenLastCalledWith('/merchant/orders/31/chat/messages', expect.any(Object));
+  });
+
   it('keeps demo messages inside the demo branch without calling the real API', async () => {
     mocks.demoActive = true;
 

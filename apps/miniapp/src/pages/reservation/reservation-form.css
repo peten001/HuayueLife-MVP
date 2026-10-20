@@ -1,0 +1,51 @@
+/* Native restaurant confirmation forms: shared compact spacing and touch areas. */
+.reservation-page { min-height: 100vh; box-sizing: border-box; padding: 24rpx 24rpx calc(180rpx + env(safe-area-inset-bottom)); background: #F6FAF7; color: #1F2D24; font-size: 27rpx; }
+.visit-header { padding: 4rpx 4rpx 22rpx; }
+.visit-top { display: flex; align-items: flex-start; gap: 16rpx; }
+.visit-title { flex: 1; min-width: 0; font-size: 32rpx; font-weight: 700; line-height: 1.4; word-break: break-all; }
+.way-tag { flex-shrink: 0; max-width: 42%; padding: 6rpx 12rpx; border-radius: 12rpx; background: #EAF7EE; color: #2E7D32; font-size: 23rpx; line-height: 1.4; }
+.visit-address { display: block; margin-top: 8rpx; color: #666; font-size: 23rpx; line-height: 1.5; overflow-wrap: anywhere; }
+.reservation-card { padding: 22rpx 24rpx; margin-bottom: 16rpx; border-radius: 32rpx; background: #FFF; }
+.card-title { display: block; font-size: 29rpx; font-weight: 650; line-height: 1.5; }
+.card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; min-height: 44px; }
+.card-heading .card-title { flex: 1; min-width: 0; }
+.time-modes { display: flex; gap: 8rpx; margin: 16rpx 0 12rpx; padding: 6rpx; border-radius: 20rpx; background: #F6FAF7; }
+.time-modes button { flex: 1; min-width: 0; min-height: 44px; margin: 0; padding: 12rpx 8rpx; border-radius: 16rpx; background: transparent; color: #666; font-size: 26rpx; line-height: 1.5; display: flex; align-items: center; justify-content: center; }
+.time-modes button::after { border: 0; }
+.time-modes .selected { background: #EAF7EE; color: #2E7D32; font-weight: 600; }
+.date-time-row { display: flex; gap: 12rpx; margin-top: 16rpx; }
+.date-time-row picker { flex: 1; min-width: 0; }
+.picker-field { box-sizing: border-box; min-height: 44px; padding: 12rpx 16rpx; border-radius: 18rpx; background: #F6FAF7; }
+.field-label { display: block; margin-bottom: 4rpx; color: #666; font-size: 22rpx; line-height: 1.4; }
+.picker-value { display: block; font-size: 27rpx; line-height: 1.5; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chevron { float: right; margin-left: 4rpx; color: #2E7D32; }
+.hint { display: block; color: #666; font-size: 23rpx; line-height: 1.55; }
+.time-note { display: block; margin-top: 8rpx; color: #666; font-size: 22rpx; line-height: 1.5; }
+.guests-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; margin-top: 12rpx; }
+.guests-input { display: flex; align-items: center; gap: 12rpx; color: #666; }
+.guest-count { width: 100rpx; min-height: 44px; text-align: center; border-radius: 16rpx; background: #F6FAF7; color: #1F2D24; font-size: 29rpx; font-weight: 600; }
+.contact-row { display: flex; align-items: center; gap: 16rpx; min-height: 48px; padding: 6rpx 0; }
+.contact-label { width: 160rpx; flex-shrink: 0; font-size: 26rpx; line-height: 1.5; }
+.contact-input { flex: 1; min-width: 0; height: 44px; text-align: right; color: #1F2D24; font-size: 27rpx; }
+.notes-heading { display: flex; align-items: center; gap: 12rpx; margin: 8rpx 0 12rpx; font-size: 25rpx; }
+.form-notes { box-sizing: border-box; width: 100%; min-height: 88rpx; max-height: 240rpx; padding: 16rpx; border-radius: 16rpx; background: #F6FAF7; font-size: 25rpx; line-height: 1.55; }
+.text-button { flex-shrink: 0; max-width: 48%; display: flex; align-items: center; min-height: 44px; margin: 0; padding: 8rpx 0 8rpx 16rpx; background: transparent; color: #2E7D32; font-size: 25rpx; line-height: 1.5; }
+.text-button::after { border: 0; }
+.dish-info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dish-row { display: flex; justify-content: space-between; gap: 16rpx; padding: 12rpx 0; font-size: 26rpx; line-height: 1.5; }
+.dish-price { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.reservation-note { display: flex; flex-direction: column; gap: 8rpx; padding: 4rpx 6rpx 12rpx; font-size: 23rpx; color: #666; line-height: 1.55; }
+.confirmation-hint { color: #2E7D32; }
+.summary-line { display: flex; justify-content: space-between; gap: 16rpx; padding: 10rpx 0; line-height: 1.5; }
+.summary-line text:last-child { text-align: right; overflow-wrap: anywhere; }
+.reservation-dock { position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 20rpx; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); background: #FFF; border-top: 1rpx solid #F0F0F0; }
+.dock-summary { min-width: 0; flex: 1; }
+.amount { display: block; margin-top: 2rpx; font-size: 34rpx; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dock-meta { display: block; margin-top: 4rpx; font-size: 27rpx; }
+.primary-button { flex-shrink: 0; display: flex; align-items: center; justify-content: center; max-width: 58%; min-height: 44px; margin: 0; padding: 20rpx 28rpx; border-radius: 24rpx; background: #43A047; color: #FFF; font-size: 28rpx; font-weight: 600; line-height: 1.5; }
+.primary-button::after { border: 0; }
+.primary-button[disabled] { background: #E6ECE7; color: #809084; }
+.state-card { padding: 40rpx 24rpx; border-radius: 32rpx; background: #FFF; line-height: 1.7; text-align: center; }
+.state-card button { min-height: 44px; margin-top: 20rpx; color: #2E7D32; background: #EAF7EE; border-radius: 20rpx; font-size: 27rpx; }
+.error-message { margin: 16rpx 0; padding: 20rpx; border-radius: 20rpx; background: #FFF0ED; color: #B33B2B; font-size: 25rpx; line-height: 1.6; }
+.primary-button:active, .text-button:active, .time-modes button:active, .picker-field:active { opacity: .8; }

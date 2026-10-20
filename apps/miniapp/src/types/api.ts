@@ -347,6 +347,7 @@ export interface Cart {
 }
 
 export interface CartContext {
+  diningReservationId?: string;
   reservation?: boolean;
   merchantId: string;
   merchantName: string;
@@ -401,7 +402,7 @@ export type OrderChatSenderType = 'CUSTOMER' | 'MERCHANT';
 export interface OrderChatMessage {
   id: string;
   conversationId: string;
-  orderId: string;
+  orderId: string | null;
   senderType: OrderChatSenderType;
   senderId: string;
   content: string;
@@ -420,6 +421,7 @@ export interface UserOrderChatConversation {
   merchantUnreadCount: number;
   lastMessageAt?: string | null;
   lastMessageId?: string | null;
+  lastMessage?: OrderChatMessage | null;
   customerLastReadAt?: string | null;
   merchantLastReadAt?: string | null;
 }
