@@ -1,0 +1,313 @@
+{
+  "mobile": {
+    "375": {
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "appShellSignature": {
+        "viewport": "width=390, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
+        "themeColor": "#fbfcfa",
+        "statusBarStyle": "default",
+        "htmlBackground": "rgb(243, 246, 241)",
+        "bodyBackground": "rgb(243, 246, 241)",
+        "appBackground": "rgb(243, 246, 241)",
+        "textSizeAdjust": "100%",
+        "editableFontSizes": []
+      },
+      "tableSignature": {
+        "columns": 2,
+        "filterRows": 1,
+        "brand": "YunQiao",
+        "actions": [
+          "正在重连",
+          "打印功能未开通",
+          "新订单",
+          "刷新"
+        ]
+      },
+      "drawerPolish": {
+        "width": 288.453125,
+        "logicalWidth": 299.991,
+        "expectedLogicalWidth": 300,
+        "viewportWidth": 375
+      },
+      "menuSignature": {
+        "topbarBeforeCategories": true,
+        "categoryRows": 1,
+        "productColumns": 1,
+        "searchTriggers": 1
+      },
+      "selectedMenuPolish": {
+        "stepper": {
+          "width": 131.999,
+          "height": 45.9875
+        },
+        "stepperButton": {
+          "width": 43.9888,
+          "height": 43.9888
+        },
+        "stepperIcon": {
+          "width": 17.9888,
+          "height": 17.9888
+        },
+        "addButton": {
+          "width": 43.9888,
+          "height": 43.9888
+        },
+        "addIcon": {
+          "width": 18.9963,
+          "height": 18.9963
+        },
+        "productHeight": 78,
+        "imageSize": 55.9975,
+        "outputFontSize": 16,
+        "dockButtonHeight": 53.9988,
+        "selectedImageOpacity": null
+      },
+      "billSignature": {
+        "headerColumns": 3,
+        "addButtons": 1,
+        "dockButtons": 3,
+        "moreButtons": 1
+      },
+      "eightItemFit": {
+        "count": 8,
+        "eighthBottom": 705.15625,
+        "dockTop": 740.609375,
+        "dockVisible": true,
+        "fitsWithoutScroll": true
+      },
+      "workflowSignature": {
+        "pickupListCards": 3,
+        "pickupFilterRows": 1,
+        "pickupDetail": 1,
+        "deliveryListCards": 3,
+        "deliveryFilterRows": 1,
+        "deliveryDetail": 1,
+        "chatKeyboardAnchor": "PINNED_COMPACT",
+        "historyListCards": 5,
+        "historyDetail": 1
+      }
+    },
+    "390": {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "appShellSignature": {
+        "viewport": "width=390, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
+        "themeColor": "#fbfcfa",
+        "statusBarStyle": "default",
+        "htmlBackground": "rgb(243, 246, 241)",
+        "bodyBackground": "rgb(243, 246, 241)",
+        "appBackground": "rgb(243, 246, 241)",
+        "textSizeAdjust": "100%",
+        "editableFontSizes": []
+      },
+      "tableSignature": {
+        "columns": 2,
+        "filterRows": 1,
+        "brand": "YunQiao",
+        "actions": [
+          "正在重连",
+          "打印功能未开通",
+          "新订单",
+          "刷新"
+        ]
+      },
+      "drawerPolish": {
+        "width": 312,
+        "logicalWidth": 312,
+        "expectedLogicalWidth": 312,
+        "viewportWidth": 390
+      },
+      "menuSignature": {
+        "topbarBeforeCategories": true,
+        "categoryRows": 1,
+        "productColumns": 1,
+        "searchTriggers": 1
+      },
+      "selectedMenuPolish": {
+        "stepper": {
+          "width": 134,
+          "height": 46
+        },
+        "stepperButton": {
+          "width": 44,
+          "height": 44
+        },
+        "stepperIcon": {
+          "width": 18,
+          "height": 18
+        },
+        "addButton": {
+          "width": 44,
+          "height": 44
+        },
+        "addIcon": {
+          "width": 19,
+          "height": 19
+        },
+        "productHeight": 79.9375,
+        "imageSize": 58,
+        "outputFontSize": 16,
+        "dockButtonHeight": 56,
+        "selectedImageOpacity": null
+      },
+      "billSignature": {
+        "headerColumns": 3,
+        "addButtons": 1,
+        "dockButtons": 3,
+        "moreButtons": 1
+      },
+      "eightItemFit": {
+        "count": 8,
+        "eighthBottom": 751.484375,
+        "dockTop": 767.03125,
+        "dockVisible": true,
+        "fitsWithoutScroll": true
+      },
+      "workflowSignature": {
+        "pickupListCards": 3,
+        "pickupFilterRows": 1,
+        "pickupDetail": 1,
+        "deliveryListCards": 3,
+        "deliveryFilterRows": 1,
+        "deliveryDetail": 1,
+        "chatKeyboardAnchor": "PINNED_COMPACT",
+        "historyListCards": 5,
+        "historyDetail": 1
+      }
+    },
+    "430": {
+      "viewport": {
+        "width": 430,
+        "height": 932
+      },
+      "appShellSignature": {
+        "viewport": "width=390, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
+        "themeColor": "#fbfcfa",
+        "statusBarStyle": "default",
+        "htmlBackground": "rgb(243, 246, 241)",
+        "bodyBackground": "rgb(243, 246, 241)",
+        "appBackground": "rgb(243, 246, 241)",
+        "textSizeAdjust": "100%",
+        "editableFontSizes": []
+      },
+      "tableSignature": {
+        "columns": 2,
+        "filterRows": 1,
+        "brand": "YunQiao",
+        "actions": [
+          "正在重连",
+          "打印功能未开通",
+          "新订单",
+          "刷新"
+        ]
+      },
+      "drawerPolish": {
+        "width": 352.8125,
+        "logicalWidth": 319.993,
+        "expectedLogicalWidth": 320,
+        "viewportWidth": 430
+      },
+      "menuSignature": {
+        "topbarBeforeCategories": true,
+        "categoryRows": 1,
+        "productColumns": 1,
+        "searchTriggers": 1
+      },
+      "selectedMenuPolish": {
+        "stepper": {
+          "width": 133.992,
+          "height": 45.9866
+        },
+        "stepperButton": {
+          "width": 44.0592,
+          "height": 43.9884
+        },
+        "stepperIcon": {
+          "width": 17.9978,
+          "height": 17.9978
+        },
+        "addButton": {
+          "width": 47.9989,
+          "height": 47.9989
+        },
+        "addIcon": {
+          "width": 18.9898,
+          "height": 18.9898
+        },
+        "productHeight": 79.9982,
+        "imageSize": 61.9862,
+        "outputFontSize": 16,
+        "dockButtonHeight": 57.9898,
+        "selectedImageOpacity": null
+      },
+      "billSignature": {
+        "headerColumns": 3,
+        "addButtons": 1,
+        "dockButtons": 3,
+        "moreButtons": 1
+      },
+      "eightItemFit": {
+        "count": 8,
+        "eighthBottom": 836.78125,
+        "dockTop": 842.78125,
+        "dockVisible": true,
+        "fitsWithoutScroll": true
+      },
+      "workflowSignature": {
+        "pickupListCards": 3,
+        "pickupFilterRows": 1,
+        "pickupDetail": 1,
+        "deliveryListCards": 3,
+        "deliveryFilterRows": 1,
+        "deliveryDetail": 1,
+        "chatKeyboardAnchor": "PINNED_COMPACT",
+        "historyListCards": 5,
+        "historyDetail": 1
+      }
+    }
+  },
+  "desktop": {
+    "1024": {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "formalRoutes": "OLD_UI",
+      "overflow": "NONE"
+    },
+    "1280": {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "formalRoutes": "OLD_UI",
+      "overflow": "NONE"
+    },
+    "1440": {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "formalRoutes": "OLD_UI",
+      "overflow": "NONE"
+    }
+  },
+  "browserErrors": [],
+  "externalMapTilesStubbed": true,
+  "formalMobileBoot": {
+    "rootClass": true,
+    "viewport": "width=390, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
+    "viewportOriginal": "width=device-width, initial-scale=1.0, viewport-fit=cover",
+    "themeColor": "#fbfcfa",
+    "themeOriginal": "#010911",
+    "statusBarStyle": "default",
+    "statusOriginal": "black-translucent",
+    "htmlBackground": "rgb(243, 246, 241)",
+    "bodyBackground": "rgb(243, 246, 241)"
+  }
+}

@@ -10,6 +10,7 @@ const mobileV2Files = [
   'navigation.ts',
   'routes.ts',
   'pages/MobileV2TablesPage.vue',
+  'pages/MobileV2ReservationsPage.vue',
   'pages/MobileV2PickupPage.vue',
   'pages/MobileV2DeliveryPage.vue',
   'pages/MobileV2HistoryPage.vue',
@@ -26,10 +27,11 @@ describe('isolated Mobile V2 architecture', () => {
   });
 
   it('adapts the incumbent route-owned pages instead of cloning their logic', () => {
-    const pages = mobileV2Files.slice(-4).join('\n');
+    const pages = mobileV2Files.slice(-5).join('\n');
     expect(pages).toContain("import TableOverviewPage from '@/pages/TableOverviewPage.vue';");
     expect(pages).toContain("import PickupOrdersPage from '@/pages/PickupOrdersPage.vue';");
     expect(pages).toContain("import DeliveryOrdersPage from '@/pages/DeliveryOrdersPage.vue';");
+    expect(pages).toContain("import ReservationsPage from '@/pages/ReservationsPage.vue';");
     expect(pages).toContain("import OrderHistoryPage from '@/pages/OrderHistoryPage.vue';");
   });
 
@@ -58,7 +60,8 @@ describe('isolated Mobile V2 architecture', () => {
     expect(header).not.toContain('cashierV2.tablesTab');
     expect(header).not.toContain('cashierV2.menuTab');
     expect(header).not.toContain('Globe2');
-    expect(header).toContain("(workspace === 'pickup' || workspace === 'delivery') && !detailMode");
+    expect(header).toContain("(workspace === 'pickup' || workspace === 'delivery' || workspace === 'reservations') && !detailMode");
+    expect(frame).toContain("props.workspace === 'reservations' && Boolean(route.query.reservationId)");
     expect(frame).toContain('const fulfillmentDetailMode = computed(() => (');
     expect(frame).toContain(':detail-mode="fulfillmentDetailMode"');
     expect(frame).toContain('const mobileV2LogicalViewportWidth = 390;');
@@ -91,7 +94,8 @@ describe('isolated Mobile V2 architecture', () => {
     expect(index).toContain('const mobileV2LogicalViewportWidth = 390;');
     expect(index).toContain('`width=${mobileV2LogicalViewportWidth}, user-scalable=no');
     expect(index).not.toContain("'width=device-width, initial-scale=1, maximum-scale=1");
-    expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(4);
+    expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(5);
+    expect(index).toContain('tables|reservations|pickup|delivery|orders\\/history');
     expect(shell).toContain("useMediaQuery('(max-width: 899px)')");
     expect(shell).toContain('mobileLayout.value && route.meta.mobileV2Enabled === true');
     expect(shell).toContain(':mobile="mobileV2Presentation"');

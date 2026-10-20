@@ -92,16 +92,20 @@ body.cashier-mobile-v2-preview-active #app {
 
 .mobile-v2-preview-main {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--mobile-v2-bg);
 }
 
-.mobile-v2-preview-main > :not(.orientation-notice) {
-  height: 100%;
+.mobile-v2-preview-main > :not(.orientation-notice):not(.reservation-attention) {
+  flex: 1;
   min-height: 0;
 }
+
+.mobile-v2-preview-main > .reservation-attention { flex: none; height: auto; }
 
 .mobile-v2-header {
   position: relative;
@@ -1216,7 +1220,7 @@ body.cashier-mobile-v2-preview-active #app {
     transform: translateY(1px) scale(.975);
   }
 
-  .mobile-v2-preview-main > :not(.orientation-notice) {
+  .mobile-v2-preview-main > :not(.orientation-notice):not(.reservation-attention) {
     animation: mobile-v2-surface-enter 240ms var(--mobile-v2-ease-out) both;
   }
 
@@ -2043,6 +2047,112 @@ body.cashier-mobile-v2-preview-active #app {
     min-height: clamp(48px, 13.846vw, 60px);
     border-radius: var(--mobile-v2-radius-control);
   }
+
+  /* Reservations inherit the delivery workspace, including its mobile shell. */
+  .cashier-shell--mobile-v2-preview .reservations-page { color: var(--mobile-v2-text); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-list-card {
+    display: block;
+    border-color: var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-control);
+    padding: 12px;
+    color: var(--mobile-v2-text);
+    background: var(--mobile-v2-surface-raised);
+    box-shadow: 0 3px 12px rgb(28 54 38 / 5%);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-list-card.is-selected {
+    border-color: #9bbfa6;
+    background: var(--mobile-v2-green-wash);
+    box-shadow: 0 0 0 3px var(--mobile-v2-focus);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-controls { gap: 8px; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-controls > input,
+  .cashier-shell--mobile-v2-preview .reservations-page .workflow-search {
+    height: var(--mobile-v2-control);
+    border-color: var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-control);
+    color: var(--mobile-v2-text);
+    background: var(--mobile-v2-surface-raised);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-controls > input { width: 138px; font-size: 16px; }
+  .cashier-shell--mobile-v2-preview .reservations-page .workflow-search input { height: 100%; font-size: 16px; }
+  .cashier-shell--mobile-v2-preview .reservations-page .list-card-heading > strong { font-size: var(--mobile-v2-type-lg); }
+  .cashier-shell--mobile-v2-preview .reservations-page :is(.list-card-meta, .list-card-contact) { color: var(--mobile-v2-muted); font-size: var(--mobile-v2-type-sm); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-pane-tabs { flex-wrap: nowrap; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-chat-body { flex-direction: column; }
+  .cashier-shell--mobile-v2-preview .reservations-page .order-chat-workspace { height: 0; min-height: 0; flex: 1; }
+  .cashier-shell--mobile-v2-preview .reservations-page .chat-message-list-shell { min-height: 0; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-detail-panel {
+    gap: var(--mobile-v2-phone-gap);
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .detail-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .detail-panel-heading .eyebrow { display: none; }
+  .cashier-shell--mobile-v2-preview .reservations-page .detail-panel-heading h2 { margin: 0; color: var(--mobile-v2-text); font-size: 21px; line-height: 1.5; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-table-plan {
+    gap: 6px 12px;
+    margin: 0;
+    border-radius: var(--mobile-v2-radius-control);
+    padding: 12px;
+    background: var(--mobile-v2-green-wash);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-table-plan > strong { font-size: 22px; color: var(--mobile-v2-green-strong); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-facts > div {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    justify-content: stretch;
+    gap: 5px;
+    margin: 0;
+    border-radius: var(--mobile-v2-radius-control);
+    padding: 10px;
+    background: var(--mobile-v2-surface-muted);
+    font-size: var(--mobile-v2-type-sm);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-facts > div:nth-child(n+3) { grid-column: 1 / -1; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-facts :is(dt, dd) { min-width: 0; text-align: start; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-facts dt { color: var(--mobile-v2-muted); }
+  .cashier-shell--mobile-v2-preview .reservations-page .preorder-section {
+    border: 1px solid var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-control);
+    padding: 12px;
+    background: var(--mobile-v2-surface-raised);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .preorder-section h3 { margin-bottom: 10px; font-size: var(--mobile-v2-type-md); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-item { gap: 12px; font-size: var(--mobile-v2-type-sm); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-total { margin-top: 12px; padding-top: 12px; color: var(--mobile-v2-money); }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-id { margin: 0; color: var(--mobile-v2-muted); font-size: var(--mobile-v2-type-xs); }
+  .cashier-shell--mobile-v2-preview .reservations-page .fulfillment-action-dock.reservation-actions > button {
+    min-height: 48px;
+    border-radius: var(--mobile-v2-radius-control);
+    font-size: var(--mobile-v2-type-sm);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-modal-backdrop {
+    align-items: flex-end;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom, 0px));
+    background: rgb(15 29 20 / 50%);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-modal {
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(var(--mobile-v2-layout-height, 100dvh) - 32px);
+    border-color: var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-card);
+    color: var(--mobile-v2-text);
+    background: var(--mobile-v2-surface);
+  }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-modal :is(input, select) { font-size: 16px; }
+  .cashier-shell--mobile-v2-preview .reservations-page .reservation-modal button { min-height: 44px; }
 
   .cashier-shell--mobile-v2-preview .history-toolbar { gap: clamp(7px, 2.051vw, 9px); }
   .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date {

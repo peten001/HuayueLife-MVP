@@ -10,6 +10,12 @@ export const mobileV2PreviewRoutes: RouteRecordRaw[] = import.meta.env.DEV
         meta: { mobileV2Preview: true },
       },
       {
+        path: '__preview/mobile-v2/reservations',
+        name: mobileV2PreviewRouteNames.reservations,
+        component: () => import('./pages/MobileV2ReservationsPage.vue'),
+        meta: { mobileV2Preview: true },
+      },
+      {
         path: '__preview/mobile-v2/pickup/:orderId?',
         name: mobileV2PreviewRouteNames.pickup,
         component: () => import('./pages/MobileV2PickupPage.vue'),

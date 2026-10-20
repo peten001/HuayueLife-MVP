@@ -291,7 +291,7 @@ async function selectMobileOperationalFilter(filter: string) {
   if (!mobileOperationalFilters.value.some((item) => item.value === filter)) return;
   const current = router.currentRoute.value;
   const query = { ...current.query };
-  if (mobileOperationalContext.value === 'reservation') { delete query.reservationId; query.status = filter; }
+  if (mobileOperationalContext.value === 'reservation') { delete query.reservationId; delete query.pane; query.status = filter; }
   else if (filter === 'ALL') delete query.status;
   else query.status = filter;
   await router.replace({ path: current.path, query });

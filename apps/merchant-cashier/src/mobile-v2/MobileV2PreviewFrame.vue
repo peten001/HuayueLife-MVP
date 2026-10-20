@@ -64,8 +64,9 @@ const isolatedTableDetailMode = computed(() => (
 ));
 const fulfillmentDetailMode = computed(() => (
   mobileLayout.value
-  && (props.workspace === 'pickup' || props.workspace === 'delivery')
-  && Boolean(route.params.orderId)
+  && ((props.workspace === 'pickup' || props.workspace === 'delivery')
+    ? Boolean(route.params.orderId)
+    : props.workspace === 'reservations' && Boolean(route.query.reservationId))
 ));
 const hideWorkspaceHeader = computed(() => isolatedMenuMode.value || isolatedTableDetailMode.value);
 const mobileV2RootClass = 'cashier-mobile-v2-preview-active';

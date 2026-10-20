@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "cashierTests": 713,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "productionBuild": "PASS",
+  "reservationUiFlows": 5,
+  "mobileWidths": [
+    320,
+    375,
+    390,
+    414,
+    430,
+    768,
+    899
+  ],
+  "mobileStates": [
+    "list",
+    "detail",
+    "chat"
+  ],
+  "desktopWidths": [
+    900,
+    1280,
+    1440
+  ],
+  "actualMobileViewport": true,
+  "loadingEmptyErrorStates": "PASS",
+  "existingMobileV2Widths": [
+    375,
+    390,
+    430
+  ],
+  "existingDesktopWidths": [
+    1024,
+    1280,
+    1440
+  ],
+  "externalMapTilesStubbedForExistingRegression": true,
+  "productionDataUsed": false,
+  "apiChanged": false,
+  "miniappChanged": false
+}

@@ -7,6 +7,7 @@ export const MOBILE_V2_PREVIEW_ROOT = '/__preview/mobile-v2';
 
 export const mobileV2PreviewRouteNames = {
   tables: 'mobile-v2-preview-tables',
+  reservations: 'mobile-v2-preview-reservations',
   pickup: 'mobile-v2-preview-pickup',
   delivery: 'mobile-v2-preview-delivery',
   history: 'mobile-v2-preview-history',
@@ -16,6 +17,7 @@ export type CashierPresentationWorkspace = keyof typeof mobileV2PreviewRouteName
 
 const canonicalRouteNameByPreviewRoute = new Map<RouteRecordNameGeneric, string>([
   [mobileV2PreviewRouteNames.tables, 'tables'],
+  [mobileV2PreviewRouteNames.reservations, 'reservations'],
   [mobileV2PreviewRouteNames.pickup, 'pickup-orders'],
   [mobileV2PreviewRouteNames.delivery, 'delivery-orders'],
   [mobileV2PreviewRouteNames.history, 'order-history'],
@@ -23,6 +25,7 @@ const canonicalRouteNameByPreviewRoute = new Map<RouteRecordNameGeneric, string>
 
 const previewRouteNameByCanonicalRoute = new Map<RouteRecordNameGeneric, string>([
   ['tables', mobileV2PreviewRouteNames.tables],
+  ['reservations', mobileV2PreviewRouteNames.reservations],
   ['pickup-orders', mobileV2PreviewRouteNames.pickup],
   ['delivery-orders', mobileV2PreviewRouteNames.delivery],
   ['order-history', mobileV2PreviewRouteNames.history],
@@ -30,6 +33,7 @@ const previewRouteNameByCanonicalRoute = new Map<RouteRecordNameGeneric, string>
 
 const previewPathByCanonicalPath = new Map([
   ['/tables', `${MOBILE_V2_PREVIEW_ROOT}/tables`],
+  ['/reservations', `${MOBILE_V2_PREVIEW_ROOT}/reservations`],
   ['/pickup', `${MOBILE_V2_PREVIEW_ROOT}/pickup`],
   ['/delivery', `${MOBILE_V2_PREVIEW_ROOT}/delivery`],
   ['/orders/history', `${MOBILE_V2_PREVIEW_ROOT}/history`],
@@ -48,6 +52,7 @@ export function isMobileV2PreviewRouteName(name: RouteRecordNameGeneric | null |
 export function cashierPresentationWorkspace(name: RouteRecordNameGeneric | null | undefined): CashierPresentationWorkspace | null {
   const canonicalName = canonicalCashierRouteName(name);
   if (canonicalName === 'tables') return 'tables';
+  if (canonicalName === 'reservations') return 'reservations';
   if (canonicalName === 'pickup-orders') return 'pickup';
   if (canonicalName === 'delivery-orders') return 'delivery';
   if (canonicalName === 'order-history') return 'history';

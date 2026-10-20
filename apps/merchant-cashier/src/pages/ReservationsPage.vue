@@ -10,6 +10,7 @@ import { useI18n } from '@/i18n';
 import { listDiningTables, listOpenTableSessions } from '@/api/tables';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 import { RESERVATION_FILTERS, reservationMatchesFilter } from '@/domain/reservation-queue';
+import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
 import type { ReservationAction } from '@/api/reservations';
 import type { DiningTable } from '@/types';
 import LoadingState from '@/components/common/LoadingState.vue';
@@ -24,6 +25,7 @@ const auth = useAuthStore();
 const network = useNetworkStore();
 const route = useRoute();
 const router = useRouter();
+const mobileV2Preview = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
 const mobileViewport = useMediaQuery('(max-width: 899px)');
 const writeDisabled = computed(() => !auth.demoMode && networkWritesDisabled(network.online, network.apiReachable));
 const filter = computed(() => typeof route.query.status === 'string' && RESERVATION_FILTERS.some(option => option.value === route.query.status)
@@ -65,7 +67,7 @@ const selectableTables = computed(() => tables.value.filter(table => dialog.valu
 
 onMounted(() => { void store.load(); });
 watch(() => route.query.view, value => {
-  if (value === 'due') void router.replace({ path: '/pickup', query: { status: 'DUE' } });
+  if (value === 'due') void router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'pickup-orders', query: { status: 'DUE' } }));
 }, { immediate: true });
 watch(() => auth.merchant?.id, () => { tableRequest++; dialog.value = ''; tables.value = []; });
 watch(dialog, async value => {
@@ -73,14 +75,15 @@ watch(dialog, async value => {
   else { tableRequest++; loadingTables.value = false; returnFocus?.focus(); }
 });
 function selectRow(row: ArrivalReservation) {
-  void router.replace({ path: route.path, query: { ...route.query, status: filter.value, reservationId: row.id } });
+  const next = { ...route.query }; next.status = filter.value; next.reservationId = row.id; delete next.pane;
+  void router.replace({ path: route.path, query: next });
 }
 function selectFilter(status: string) {
-  const next = { ...route.query }; next.status = status; delete next.reservationId;
+  const next = { ...route.query }; next.status = status; delete next.reservationId; delete next.pane;
   void router.replace({ path: route.path, query: next });
 }
 function backToList() {
-  const next = { ...route.query }; delete next.reservationId;
+  const next = { ...route.query }; delete next.reservationId; delete next.pane;
   void router.replace({ path: route.path, query: next });
 }
 async function loadTables() {
@@ -141,7 +144,7 @@ function itemName(item: ArrivalReservation['items'][number]) {
 </script>
 
 <template>
-  <section class="fulfillment-page reservations-page" :class="{ 'has-selection': Boolean(selected) }">
+  <section class="fulfillment-page reservations-page" :class="{ 'has-selection': Boolean(selected), 'pane-chat': chatActive }">
     <div class="fulfillment-workspace">
       <aside class="fulfillment-queue">
         <div v-if="!mobileViewport" class="pickup-queue-toolbar delivery-queue-toolbar">
@@ -157,7 +160,7 @@ function itemName(item: ArrivalReservation['items'][number]) {
         <LoadingState v-if="store.loading && !store.reservations.length" :label="rt('loading')" />
         <ErrorState v-else-if="store.error && !store.reservations.length" :title="rt('loadError')" :description="store.error" :retry-label="rt('retry')" @retry="store.load" />
         <div v-else-if="rows.length" class="fulfillment-queue__list reservation-list">
-          <button v-for="row in rows" :key="keyFor(row)" type="button" :data-reservation-key="keyFor(row)" class="reservation-list-card" :class="{ selected: selected?.id === row.id }" @click="selectRow(row)">
+          <button v-for="row in rows" :key="keyFor(row)" type="button" :data-reservation-key="keyFor(row)" class="fulfillment-order-card reservation-list-card" :class="{ selected: selected?.id === row.id, 'is-selected': selected?.id === row.id }" @click="selectRow(row)">
             <span class="list-card-heading"><strong>{{ formatReservationTime(row.scheduledFor, locale) }}</strong><span class="status-badge">{{ rt(row.status) }}</span></span>
             <span class="list-card-meta">{{ row.guestCount }} {{ rt('people') }} · {{ (row.table || row.assignedTable)?.tableNo || rt('tablePending') }}</span>
             <span class="list-card-contact">{{ row.contactName }} · {{ row.contactPhone }}<ChevronRight :size="16" aria-hidden="true" /></span>
@@ -170,11 +173,11 @@ function itemName(item: ArrivalReservation['items'][number]) {
       <section class="fulfillment-main">
         <div v-if="selected" class="fulfillment-main__topbar">
           <button type="button" class="mobile-workspace-back" @click="backToList"><ArrowLeft :size="18" aria-hidden="true" />{{ rt('backToList') }}</button>
-          <div class="reservation-pane-tabs" role="tablist" :aria-label="rt('details')"><button type="button" role="tab" :aria-selected="!chatActive" @click="setPane('detail')"><CalendarClock :size="18" aria-hidden="true" />{{ rt('details') }}</button><button type="button" role="tab" :aria-selected="chatActive" @click="setPane('chat')"><MessageCircle :size="18" aria-hidden="true" />{{ t('cashier.chat.title') }}<span v-if="selected.chatConversation?.merchantUnreadCount" class="reservation-unread">{{ selected.chatConversation.merchantUnreadCount > 99 ? '99+' : selected.chatConversation.merchantUnreadCount }}</span></button></div>
+          <div class="fulfillment-pane-tabs reservation-pane-tabs" role="tablist" :aria-label="rt('details')"><button type="button" role="tab" :class="{ 'is-active': !chatActive }" :aria-selected="!chatActive" @click="setPane('detail')"><CalendarClock :size="18" aria-hidden="true" />{{ rt('details') }}</button><button type="button" role="tab" :class="{ 'is-active': chatActive }" :aria-selected="chatActive" @click="setPane('chat')"><MessageCircle :size="18" aria-hidden="true" />{{ t('cashier.chat.title') }}<span v-if="selected.chatConversation?.merchantUnreadCount" class="reservation-unread">{{ selected.chatConversation.merchantUnreadCount > 99 ? '99+' : selected.chatConversation.merchantUnreadCount }}</span></button></div>
         </div>
-        <div class="fulfillment-main__body" :class="{ 'reservation-chat-body': chatActive }">
+        <div class="fulfillment-main__body" :class="{ 'reservation-chat-body': chatActive, 'is-chat': chatActive }">
           <OrderChatWorkspace v-if="selected && chatActive" :key="`reservation:${selected.id}`" :reservation="selected" compact-context @conversation-updated="store.updateChatSummary(selected.id, $event)" />
-          <article v-else-if="selected" class="reservation-detail-panel">
+          <article v-else-if="selected" class="fulfillment-detail reservation-detail-panel">
             <header class="detail-panel-heading"><div><span class="eyebrow">{{ rt('dineIn') }}</span><h2>{{ formatReservationTime(selected.scheduledFor, locale) }}</h2></div><span class="status-badge">{{ rt(selected.status) }}</span></header>
             <div v-if="selected.proposedScheduledFor" class="change-notice"><strong>{{ rt('changeProposed') }} · {{ formatReservationTime(selected.proposedScheduledFor, locale) }}</strong><p>{{ rt('changeHint') }}</p></div>
             <section class="reservation-table-plan"><span>{{ rt('tableNumber') }}</span><strong>{{ (selected.table || selected.assignedTable)?.tableNo || rt('tablePending') }}</strong><small v-if="selected.status === 'CONFIRMED'">{{ rt('plannedOnly') }}</small></section>
@@ -191,7 +194,7 @@ function itemName(item: ArrivalReservation['items'][number]) {
           <button v-if="['PENDING', 'CONFIRMED'].includes(selected.status)" type="button" class="secondary-action" :disabled="writeDisabled || !!store.actionId" @click="openDialog(selected, 'PROPOSE_TIME')">{{ rt('reschedule') }}</button>
           <button v-if="['PENDING', 'CONFIRMED'].includes(selected.status)" type="button" class="secondary-action" :disabled="writeDisabled || !!store.actionId" @click="openDialog(selected, 'CANCEL')">{{ rt(selected.status === 'PENDING' ? 'reject' : 'cancel') }}</button>
           <button v-if="selected.status === 'CONFIRMED' && new Date(selected.scheduledFor!).getTime() <= store.serverNow" type="button" class="secondary-action" :disabled="writeDisabled || !!store.actionId" @click="openDialog(selected, 'NO_SHOW')">{{ rt('noShow') }}</button>
-          <button v-if="selected.table" type="button" class="primary-action" @click="router.push(`/tables/${selected.table.id}`)">{{ rt('viewTableBill') }}</button>
+          <button v-if="selected.table" type="button" class="primary-action" @click="router.push(resolveCashierPresentationLocation(mobileV2Preview, { name: 'tables', params: { tableId: selected.table.id } }))">{{ rt('viewTableBill') }}</button>
         </footer>
       </section>
     </div>
