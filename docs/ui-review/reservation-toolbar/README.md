@@ -1,6 +1,6 @@
 # 收银用餐预约文案与筛选精简
 
-日期：2026-10-20。状态：本地完成，未提交、推送或部署。
+开发与本地验收：2026-10-20。状态：2026-10-21 已按用户授权提交、推送 GitHub main 并上线，版本 `reservation-toolbar-20261021-v1`，代码 `348ee733a3a12e16fa4009a39da677444d6b4c2e`。详见 [发布记录](../../release/reservation-toolbar-20261021-v1.md)。
 
 ## 页面结果
 
@@ -22,6 +22,8 @@
 - 设计扫描 P0=0；P2 是已有白色／颜色字面量及局部组件无独立构建标记，本次沿用现行外壳，不更换配色或引入新素材。
 
 执行脚本：`apps/merchant-cashier/scripts/verify-reservation-mobile-v2.mjs`。完整结构化结果见 [REPORT.json](REPORT.json)。截图使用本地测试顾客、桌号和餐品，不连接生产账号或创建生产业务数据。
+
+发布验收：[服务器](DEPLOYMENT_PASS.json)、[外网资源](PUBLIC_PASS.json)、[手机／电脑浏览器入口](BROWSER_PASS.json) 均 PASS。服务器与外网各校验 68 文件；390／1366 登录入口无页面错误或横向溢出。受保护页面内的业务流程与布局由上面的隔离本地 API 检查覆盖，未使用生产账号代为确认预约或发送消息。
 
 ## 截图
 

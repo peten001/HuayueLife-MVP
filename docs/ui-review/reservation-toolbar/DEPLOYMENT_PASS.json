@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "release": "reservation-toolbar-20261021-v1",
+  "activeTarget": "/var/www/huayue-cashier-releases/reservation-toolbar-20261021-v1",
+  "previousTarget": "/var/www/huayue-cashier-releases/current-merchant-shells-20261020-v2",
+  "http": {
+    "resourceCount": 68,
+    "apiHealth": 200,
+    "unauthenticatedKds": 401,
+    "cashierDeepLink": "PASS",
+    "kdsEntryUnchanged": "PASS"
+  },
+  "verifiedFiles": 68,
+  "preservedAssetCount": 611,
+  "previousBackupBytes": 5845208,
+  "previousBackupSha256": "5ad603a61b22b966be887e7f2cb83a46d3768564af9e8bfb97e06199033e7582",
+  "apiProcess": {
+    "status": "online",
+    "pid": 2041787,
+    "restartCount": 17,
+    "unstableRestarts": 0
+  },
+  "apiKdsConfigUnchanged": true,
+  "adminAndAliasesUnchanged": true,
+  "sourceState": "committed and pushed source with SHA-256 manifests",
+  "sourceCommit": "348ee733a3a12e16fa4009a39da677444d6b4c2e",
+  "databaseMigrations": false,
+  "productionBusinessWrites": false,
+  "serverTimestamp": "2026-10-21T11:22:44Z"
+}

@@ -1,0 +1,373 @@
+{
+  "status": "PASS",
+  "release": "reservation-toolbar-20261021-v1",
+  "resourceCount": 68,
+  "checks": [
+    {
+      "url": "https://cashier.huayueyouxuan.com/apple-touch-icon.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7838e7901ac8f7af1e289f314683a10e2c222f5bc384af8348b8c2b8b0d29d81"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/CashierShell-BWEx5XDG.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "8ea9cce420280554b12042dc8df8320c25b984be5d89c336c8f91a553e551f07"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/CashierShell-BfUHufr_.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "dd93969a531b521dd63919b1bfa98daa4c4b27870bf7a6b80e6e8b93266d95f0"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ChangePasswordPage-CD4j7wz5.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "1ed38766470bed6dd978ef75acf3876a66170c76d72fa9ea5d0db69c53dba5c9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DeliveryOrdersPage-CkDKZyQh.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "106a31b7c5644be9384f4bbc0e2db9195dbe1de46a6573a0ebe1230b42516b79"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DishReturnStatus-B4PKqXiN.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "a2049785a64a585363bd33efeebe2287fdc148f3bcb17bd7b8c4505208930f05"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DishReturnStatus-CTBl7qsZ.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "ab72fe000027d7ca22d9ddf93920ac31fb0416d2e9a12c765902ebf34ab15f3a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ErrorState.vue_vue_type_script_setup_true_lang-CmGJI_8_.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "04eeddd3f5d28e048e49a5e2da893db37e86541ad2885d53c88c59b848ebd9c7"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/FulfillmentActionDock-DgavnWng.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "96d66dc6e70f970e1ba9182f7775a9a9aff5a1eb5bf4c9c284508aea0e414146"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/FulfillmentActionDock.vue_vue_type_script_setup_true_lang-Dtg15DTP.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "d88d9f4d5382ff22ae9cc14a768d33107d0871579099e5ea89b2d7dcfe1695a9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/KdsEntryPage-zRYoLCcP.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "b43fcfaa8100246020395e5492c2b85b9deb877bcf49b5aa2af79f8249cfccaf"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/LoginPage-DsF4DWcA.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "69e4b88f7dcc895d0ee6812915f4b8e02c6b5257d22c3b961746faed82ca976b"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/MobileV2PreviewFrame-7iWjrwHt.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7282a166ddb53b54e2d7a86c7b7bcda390e579a47592b8286cfe53401985452b"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/MobileV2PreviewFrame-D-qIqlOR.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "81cd437a3bcf5914e947d65e0e4c2431150adea70f4b26dea876fa39448c9d8a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderChatWorkspace-DDZKwkkA.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "d7ecbdd8f7a5acc8d10b5e27136a3d3afe648b7a11692ae351c041e388cb303c"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderChatWorkspace-E42Wl-kV.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "0f8e9d683ad5fd6ea23ebcab6084bbce14a06fa5662f2f25ae406905445b055a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderHistoryPage-3QZteUq2.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "ff8caf064a4efb271478106501c071b9a7ed693f74fe2b795b39d20e7ce95733"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderHistoryPage-BFA1Mb8E.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "1530479b75ff6d8791efa15f8f9c589278b427bbea0580bdc8f7b42f9a50b1b3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderStatusBadge.vue_vue_type_script_setup_true_lang-DegAfJU1.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "c831ccb83ea34c20a1ce8cfb1ee5f15dd84eebb35b0382dca3c3d027064a4067"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/PickupOrdersPage-CfQMa0Ly.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "09d9c8a39f2a45d14e78815f0f690f567dbae02a5a38b2bc9230518bfe8a8018"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/PickupOrdersPage-CzIWDeRk.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7f0d1181ebff7a3c1a237587a5b417321ee22cd6d086dfd6c2e823f2a5de8135"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ReservationsPage-CTFtLO1A.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "9461efa1abaaac397d81112f03ddfbafac3a5dd93076ca7af59ba67cb09bde70"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ReservationsPage-CmLaridg.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "8192c1994b4d6060eab88a7e0ffc9f1a04b0610b1e85662006534e3452902adb"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/SettlementAdjustmentDialog-ClUDsQ_l.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "1ea37d077dbd0766be3810d1bb27c70b8b5e93b6bb725b13fdcd11d593d3fb15"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/SettlementAdjustmentDialog-DtbY6cv3.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "c64b816060c4d51014202d1b30c7fcad21b1dba79647ec6225f950b293a6e240"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/TableOverviewPage-Blg_7c5r.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "fde2b38b8120865546751ec0f55f09bbff9c456e7cb5fca066aef259fcac4d77"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/TableOverviewPage-_drTO4Ib.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "d8023bc376ec56a96abb56faf7d7990ad4fdbe5abb5bbd4aa151aeaf4a04abd3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/_plugin-vue_export-helper-D8ZE5z8c.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "0c9569df46f366e9008848a70f7c0849d141c10f1ce9fc2170633bda9a20fec3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/calendar-clock-DRVjjGNt.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "1334fbf3534f03190c4e604f78265edeba053109d1e3ed4cba3375766651f632"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/check-o-peKWKy.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "503207254478f94b34eb39f75011a985785f7580ecfe665bccaf5401052ed804"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/chevron-down-CqKKzZ19.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "450f3fc9c94aae61a7429fd273010b55a1d9fecba8203ae2a640aa882cf02888"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/chevron-right-GdHRW68j.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "70a96dcc25386bd486f6937111710de7c9af2e8086a9c38f776d50cc174dbd2f"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/circle-alert-hX0vQJeF.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "4a61484c3d556e0bd7ca1b3494f9a31fa111daa4d32198ea9946b79b31395c3d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/createLucideIcon-CvAxrnXk.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "e206128df33217b87029ba7731c584974cf432e162005761b2ce121896d9442a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/house-BSopoiqr.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7b67d670f30285d3e3803a86d04975f3cc3d3812a73afefeb13b8e216578c600"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/index-BJHEeBSx.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "b1db0959bb2b2ba3fb56c20cadc76d31131859b92ad94e0140bc13338fceb6a8"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/index-BN7-w_AM.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "6ebb8b1ec945122b9e6bf8be71adec53a3142a096780a1f1f9a68a6655b79cc3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/languages-C0a9t21-.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "e07a884145e6620ff9e16d32e071782d1360c9dc580209adea4ee4f4f61db82d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/lock-keyhole-C22tz5Jx.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "40e793d1b520ab1492c2b28f34dc30e1a9622e4ed95992f6b1237c2e6c01c7cc"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/network-write-guard-BMYax8Rs.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "8f1b907848d6a7b0a354f905a3a180db4ca959f7075f3e9bd421700ab8cde7a4"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/printing-SK1JdgJY.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "49aff31ae70d9c32b0778d1c7b0268585e0b274972d886da6617c8c8d59bf2b2"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/reservations-BiUPiUNH.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "b6c4a2e811bae79ede438b81f036a342002bc548f0475e8ef69f9ce62e161e97"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/reservations-DlhwHcWy.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "d395bebecdba34d6d7236effdfd96ca1a1185d56b5a7f7ef8236038f53705d21"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/search-BZ3CICfS.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "2ceef4f92bfa487967505f1c276ed725165b9e4599cab665473cdfc3d1359f21"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/tables-B2nFeywZ.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "bc52183a38ce3ac76c3206108c6f893b54ee26e7bc594269a95524d22bbe4a38"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/tables-DD88zR-b.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "48471c167a41872fce97e320065002b06509f7330a5278bdccf8654ae80f7cb7"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/terminal-l57MQVFv.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "91ba185ad72d1a7384b2e75ad120b53987ac95097046d43b78c5f917acff4c73"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/usePwaInstall-ynt1E4Jq.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "83f8e752d185012ac1a0665a0140c1c6bbb92fc7ccaa7ecfd44c3b97340c0ebc"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/user-round-DhqGg8SK.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "8348d6d03a2df03a5fd7caccd4f3ef15befbf18d9b92769265c992b05733ee28"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/yunqiao-cashier-mark-DQV65aIg.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "08a1eaa1d13c07171b6b321955a0f0d88eecdedf0b7bac336414ae0d048de355"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/cashier-push-sw.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "9410f89b260c2bcf85555672b37ee1c3e4803b6770af02bc5f1836df423a4ef9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/apple-touch-icon-180.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "e1a704e01c60ec0a64e09fd3aa898c877b345f4938a7eb32b92cff67e2448fde"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/apple-touch-icon-yunqiao-cashier-v2-180.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7838e7901ac8f7af1e289f314683a10e2c222f5bc384af8348b8c2b8b0d29d81"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-144.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "b70e8c923afadc1fec9e5ee8022cda2a40e9fd4f19c8e2a145d935b8ca1b02fb"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-192.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "fe901938b8ecb88d2e901fbdf56f8b14e0ceafdc41251b288c895d4069cf8f2c"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-256.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "ed6db85105b63a3c5a5e031582293c6673bafa1d5a2fa923cba52ec50ca31977"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-512-maskable.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "6756fbda1bbab6e79fe82f7f86b60e388033dbc12b94d309036d4a447ab0f7e5"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-512.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "e8326a60f3edaca57e4f0c55444ac35fddad06866cd040c6310147c8a16e5d58"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-96.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "071d03e26ccf9ae6f563c170a2698891d658876511b99a2d3249f7bc4ac6aeed"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/index.html?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "3348383bb688dd7b23aa8e92a764fd33b82e494577aecc159b05a086a6095c2c"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/kds.webmanifest?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "86a53789f27b4dbdf84b095b3759b752a7baccc4bcb7a9f0cc26627ae23f3a43"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/manifest.webmanifest?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "5aed66ba829b6660ca8ec18689ac0efa7bd9f19d33eeab0f372f19b5043e081d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/terminal-bootstrap.css?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "e713618fdea85ddf58c24f4d78926cca8d73357698ac731f713c18db7e6a5476"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/terminal-bootstrap.js?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "3f83874acec3cefe4ee890035209a8716440c1c0620ebac190a4e592a6bee212"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-cashier-mark.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "b37cbb13daa5d2f1e78d1d6c90c69559449d4956f19b439f78bb6e56a63bcb22"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-cashier-splash.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "200f8ac08c57357d70647ea8f0bdeac5f6907f4a76770019efa8f1f0fe953a16"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-logo.png?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "2dc85ade78838f51f032ca54bf80f9f53804f00624686b02fba31227f89c806d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-mark.svg?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "7d56ab8a9dc2a1dbe0e2f60400529fea7a57448420c7cace97a2f714f314cc05"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/reservations?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "3348383bb688dd7b23aa8e92a764fd33b82e494577aecc159b05a086a6095c2c"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/health",
+      "status": 200,
+      "sha256": null
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/merchant/kds",
+      "status": 401,
+      "sha256": null
+    },
+    {
+      "url": "https://kds.huayueyouxuan.com/?verify=reservation-toolbar-20261021-v1",
+      "status": 200,
+      "sha256": "baccc5eb239a293687fcb8946f625fbb43f86f6cd6d0b9d7bd3c84d85b8051ab"
+    }
+  ],
+  "mobileCashierUserVerification": "pending refresh on user device"
+}
