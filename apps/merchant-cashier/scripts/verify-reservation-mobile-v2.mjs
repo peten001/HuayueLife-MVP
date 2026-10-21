@@ -53,6 +53,21 @@ async function fit(page,label){
   const clipped=await page.locator('.reservation-list-card:visible').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+2).length);
   assert.equal(clipped,0,`${label}: reservation cards fit`);
   if(label.endsWith('-list')) {
+    assert.equal(await page.locator('.fulfillment-queue input, .reservation-controls, .reservation-zone-hint').count(),0,`${label}: date, phone filters and timezone hint are removed`);
+    const filters=page.locator('.mobile-v2-header__controls--reservations .mobile-v2-filter-strip');
+    if(await filters.count()) {
+      const geometry=await filters.evaluate(element=>({
+        width:element.clientWidth,scroll:element.scrollWidth,
+        buttons:[...element.querySelectorAll('button')].map(button=>({
+          top:button.getBoundingClientRect().top,width:button.clientWidth,
+          scroll:button.scrollWidth,whiteSpace:getComputedStyle(button).whiteSpace,
+        })),
+      }));
+      assert.equal(geometry.buttons.length,5,`${label}: five merchant status filters`);
+      assert(geometry.scroll<=geometry.width+1,`${label}: filters fit without horizontal scrolling`);
+      assert(geometry.buttons.every(button=>Math.abs(button.top-geometry.buttons[0].top)<=1&&button.scroll<=button.width+1&&button.whiteSpace==='nowrap'),`${label}: all filters fit on one row without clipping`);
+      assert.equal(await page.locator('.reservations-page .workflow-refresh-button').count(),0,`${label}: phone toolbar has no refresh button`);
+    }
     const list=await page.locator('.reservation-list').boundingBox();
     assert(list&&list.y>=0&&list.height>=44&&list.y+list.height<=await page.evaluate(()=>innerHeight)+2,'Reservation list has a usable scroll area below the compact attention strip');
     const attention=await page.locator('.reservation-attention').boundingBox();assert(!attention||attention.height<160,'Attention strip must not fill the workspace');
@@ -77,7 +92,7 @@ try {
   const flowContext=await context(390,844);const page=await pageFor(flowContext);
   await page.goto(base+'/delivery');await mobileShell(page);await dismiss(page);
   await page.locator('.mobile-v2-header__menu-button').click();
-  await page.locator('.mobile-v2-drawer__navigation a').filter({hasText:'到店预约'}).click();
+  await page.locator('.mobile-v2-drawer__navigation a').filter({hasText:'用餐预约'}).click();
   await page.locator('.reservation-list-card').first().waitFor();await mobileShell(page);
   assert.equal(new URL(page.url()).pathname,'/reservations');
   await capture(page,'01-reservation-list-390-zh');
@@ -90,7 +105,7 @@ try {
   await page.locator('.reservation-modal select').selectOption(tables[1].id);
   await page.screenshot({path:resolve(out,'02-confirm-table-sheet.png'),fullPage:true});
   await page.locator('.reservation-modal').getByRole('button',{name:'确认操作',exact:true}).click();
-  await page.locator('.reservation-detail-panel .status-badge').filter({hasText:'预约已确认'}).waitFor();
+  await page.locator('.reservation-detail-panel .status-badge').filter({hasText:'已确认'}).waitFor();
   assert((await page.locator('.reservation-table-plan').innerText()).includes(tables[1].tableNo));
   await capture(page,'03-confirmed-detail-390-zh');
   await page.getByRole('tab',{name:'订单聊天',exact:true}).click();
@@ -114,10 +129,22 @@ try {
   report.flows.push('isolated preview and reservation chat deep links retain the shared mobile shell');
   await flowContext.close();
 
-  const cases=[[320,568,'zh'],[375,667,'vi'],[390,844,'en'],[414,896,'vi'],[430,932,'zh'],[768,1024,'vi'],[899,800,'en']];
+  const cases=[[320,568,'zh'],[320,720,'vi'],[320,720,'en'],[375,667,'vi'],[390,844,'en'],[414,896,'vi'],[430,932,'zh'],[768,1024,'vi'],[899,800,'en']];
   for(const [width,height,locale] of cases){
     const ctx=await context(width,height,locale);const page=await pageFor(ctx);
     await page.goto(base+'/reservations');await mobileShell(page);await page.locator('.reservation-list-card').first().waitFor();await dismiss(page);
+    const filters=page.locator('.mobile-v2-header__controls--reservations button');
+    for(const [index,status] of [[1,'PENDING'],[2,'CONFIRMED']]) {
+      const label=await filters.nth(index).innerText();
+      await filters.nth(index).click();
+      await page.waitForURL(url=>url.searchParams.get('status')===status);
+      await page.waitForFunction(label=>{
+        const badges=[...document.querySelectorAll('.reservation-list-card .status-badge')];
+        return badges.length>0&&badges.every(badge=>badge.textContent.trim()===label);
+      },label);
+    }
+    await filters.first().click();
+    await page.waitForURL(url=>!url.searchParams.has('status')||url.searchParams.get('status')==='ACTIVE');
     const listFit=await fit(page,`${width}-${locale}-list`);
     await capture(page,`05-list-${width}-${locale}`);
     await page.locator(`[data-reservation-key="DINE_IN:${confirmed.id}"]`).click();
@@ -147,13 +174,24 @@ try {
   await errorPage.route('**/api/v1/merchant/reservations',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Local layout review: temporary unavailable'})}));
   await errorPage.goto(base+'/reservations');await mobileShell(errorPage);await errorPage.locator('.state-panel--error').waitFor();await capture(errorPage,'12-error-state');await errorContext.close();
   report.flows.push('loading, empty, and recoverable error states keep the same mobile workspace');
-  for(const width of [900,1280,1440]){
-    const ctx=await context(width,900);const page=await pageFor(ctx);
+  for(const [width,locale] of [[900,'zh'],[1280,'zh'],[1440,'zh'],[900,'vi'],[1280,'vi'],[1440,'vi'],[900,'en'],[1280,'en'],[1440,'en']]){
+    const ctx=await context(width,900,locale);const page=await pageFor(ctx);
     await page.goto(base+`/reservations?reservationId=${confirmed.id}`);await page.locator('.reservation-detail-panel').waitFor();await dismiss(page);
     assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(),0,'Desktop retains its desktop layout');
     const fitResult=await fit(page,`${width}-desktop`);assert.equal(fitResult.root,false);
     assert.equal(await page.locator('.fulfillment-queue:visible').count(),1);assert.equal(await page.locator('.fulfillment-main:visible').count(),1);
-    await capture(page,`09-desktop-${width}`);report.desktop.push({width,...fitResult});await ctx.close();
+    assert.equal(await page.locator('.fulfillment-queue input, .reservation-controls, .reservation-zone-hint').count(),0,'Desktop has no date, phone filters or timezone hint');
+    assert.equal(await page.locator('.fulfillment-queue .workflow-refresh-button:visible').count(),1,'Desktop retains its refresh control');
+    const filters=await page.locator('.fulfillment-queue .workflow-filter-chips').evaluate(element=>({
+      width:element.clientWidth,scroll:element.scrollWidth,
+      fits:[...element.querySelectorAll('button')].map(button=>{
+        const box=button.getBoundingClientRect(),parent=element.getBoundingClientRect();
+        return box.left>=parent.left&&box.right<=parent.right+1&&button.scrollWidth<=button.clientWidth+1;
+      }),
+    }));
+    assert.equal(filters.fits.length,5,'Desktop has five merchant status filters');
+    assert(filters.scroll<=filters.width+1&&filters.fits.every(Boolean),'Every desktop filter is fully visible without horizontal scrolling');
+    await capture(page,`09-desktop-${width}-${locale}`);report.desktop.push({width,locale,...fitResult});await ctx.close();
   }
   assert.deepEqual(report.errors,[]);report.pass=true;
 } catch(error) {

@@ -1,11 +1,12 @@
-import type { ArrivalReservation, ReservationTextKey } from '@huayue-life/shared';
+import type { ArrivalReservation } from '@huayue-life/shared';
+import type { TranslationKey } from '@/i18n';
 
-export const RESERVATION_FILTERS: Array<{ value: string; key: ReservationTextKey }> = [
-  { value: 'ACTIVE', key: 'active' },
-  { value: 'PENDING', key: 'PENDING' },
-  { value: 'CONFIRMED', key: 'CONFIRMED' },
-  { value: 'HISTORY', key: 'history' },
-  { value: 'ALL', key: 'all' },
+export const RESERVATION_FILTERS: Array<{ value: string; key: TranslationKey }> = [
+  { value: 'ACTIVE', key: 'reservations.filterActive' },
+  { value: 'PENDING', key: 'reservations.filterPending' },
+  { value: 'CONFIRMED', key: 'reservations.filterConfirmed' },
+  { value: 'HISTORY', key: 'reservations.filterHistory' },
+  { value: 'ALL', key: 'common.all' },
 ];
 
 export function reservationMatchesFilter(row: ArrivalReservation, filter: string) {

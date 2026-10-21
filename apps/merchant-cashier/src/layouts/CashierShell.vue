@@ -18,7 +18,6 @@ import {
 import { resolveOrderLocation } from '@/domain/order-location';
 import ReservationAttention from '@/features/inbox/ReservationAttention.vue';
 import { useReservationsStore } from '@/stores/reservations';
-import { reservationText } from '@huayue-life/shared';
 import { RESERVATION_FILTERS } from '@/domain/reservation-queue';
 import {
   useAuthStore,
@@ -145,7 +144,7 @@ const mobileOperationalContext = computed<'pickup' | 'delivery' | 'reservation' 
 });
 const mobileOperationalFilters = computed(() => {
   if (mobileOperationalContext.value === 'reservation') {
-    return RESERVATION_FILTERS.map(item => ({ value: item.value, label: reservationText(item.key, locale.value) }));
+    return RESERVATION_FILTERS.map(item => ({ value: item.value, label: t(item.key) }));
   }
   if (mobileOperationalContext.value === 'pickup') {
     return PICKUP_FILTERS.map(item => ({ value: item.value, label: t(item.key) }));

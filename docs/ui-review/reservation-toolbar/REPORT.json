@@ -1,0 +1,249 @@
+{
+  "pass": true,
+  "flows": [
+    "reservation cold boot uses the existing mobile shell before Vue mounts",
+    "delivery drawer to reservations, confirm table, send a real local message, back to list, select another reservation",
+    "isolated preview and reservation chat deep links retain the shared mobile shell",
+    "real mobile viewport uses the same fixed logical width as delivery",
+    "loading, empty, and recoverable error states keep the same mobile workspace"
+  ],
+  "mobile": [
+    {
+      "width": 320,
+      "height": 568,
+      "locale": "zh",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 320,
+      "height": 720,
+      "locale": "vi",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 320,
+      "height": 720,
+      "locale": "en",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 375,
+      "height": 667,
+      "locale": "vi",
+      "listFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      },
+      "detailFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      },
+      "chatFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      }
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "locale": "en",
+      "listFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      },
+      "detailFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      },
+      "chatFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      }
+    },
+    {
+      "width": 414,
+      "height": 896,
+      "locale": "vi",
+      "listFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      },
+      "detailFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      },
+      "chatFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      }
+    },
+    {
+      "width": 430,
+      "height": 932,
+      "locale": "zh",
+      "listFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      },
+      "detailFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      },
+      "chatFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      }
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "locale": "vi",
+      "listFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      },
+      "detailFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      },
+      "chatFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      }
+    },
+    {
+      "width": 899,
+      "height": 800,
+      "locale": "en",
+      "listFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      },
+      "detailFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      },
+      "chatFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      }
+    }
+  ],
+  "desktop": [
+    {
+      "width": 900,
+      "locale": "zh",
+      "scroll": 900,
+      "root": false
+    },
+    {
+      "width": 1280,
+      "locale": "zh",
+      "scroll": 1280,
+      "root": false
+    },
+    {
+      "width": 1440,
+      "locale": "zh",
+      "scroll": 1440,
+      "root": false
+    },
+    {
+      "width": 900,
+      "locale": "vi",
+      "scroll": 900,
+      "root": false
+    },
+    {
+      "width": 1280,
+      "locale": "vi",
+      "scroll": 1280,
+      "root": false
+    },
+    {
+      "width": 1440,
+      "locale": "vi",
+      "scroll": 1440,
+      "root": false
+    },
+    {
+      "width": 900,
+      "locale": "en",
+      "scroll": 900,
+      "root": false
+    },
+    {
+      "width": 1280,
+      "locale": "en",
+      "scroll": 1280,
+      "root": false
+    },
+    {
+      "width": 1440,
+      "locale": "en",
+      "scroll": 1440,
+      "root": false
+    }
+  ],
+  "errors": []
+}
