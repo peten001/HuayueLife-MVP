@@ -21,7 +21,7 @@ const estimate = computed(() => estimatedReadyAt(props.order));
     <div class="fulfillment-order-card__heading">
       <strong class="pickup-code">{{ pickupCode(order) || t('common.notAvailable') }}</strong>
       <div class="fulfillment-order-card__badges">
-        <OrderStatusBadge :status="order.status" :label="order.isReservation && order.status === 'ACCEPTED' ? t('fulfillment.pickupConfirmed') : undefined" />
+        <OrderStatusBadge :status="order.status === 'ACCEPTED' ? 'PREPARING' : order.status" />
         <OrderUnreadBadge :count="order.chatConversation?.merchantUnreadCount" />
       </div>
     </div>
@@ -32,8 +32,7 @@ const estimate = computed(() => estimatedReadyAt(props.order));
     <div class="fulfillment-order-card__timing">
       <span v-if="order.isReservation"><Clock3 :size="15" aria-hidden="true" />{{ reservationText('pickupTime', locale) }} · {{ formatReservationTime(order.scheduledFor, locale) }}</span>
       <span v-else><Clock3 :size="15" aria-hidden="true" />{{ t('fulfillment.estimatedAt', { time: estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }) }}</span>
-      <span v-if="order.proposedScheduledFor">{{ t('fulfillment.pickupTimePending') }}</span>
-      <WaitDuration v-else-if="!order.isReservation || ['PREPARING', 'READY'].includes(order.status)" :created-at="order.createdAt" />
+      <WaitDuration :created-at="order.createdAt" />
     </div>
     <OrderCardMeta :order="order" />
   </button>

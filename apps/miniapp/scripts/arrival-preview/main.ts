@@ -14,7 +14,7 @@ storage.set('huayue_locale', params.get('locale') || 'zh');
 const routePages: Record<string, string> = {
   '/pages/merchant/detail': 'merchant', '/pages/reservation/create': 'create', '/pages/reservation/detail': 'reservation',
   '/pages/order/detail': 'order', '/pages/orders/index': 'orders', '/pages/menu/index': 'menu', '/pages/cart/index': 'cart',
-  '/pages/reservation/dishes': 'dishes', '/pages/messages/index': 'messages', '/pages/order/chat': 'chat',
+  '/pages/reservation/dishes': 'dishes', '/pages/messages/index': 'messages', '/pages/order/chat': 'chat', '/pages/checkout/index': 'checkout',
 };
 function navigate(options: { url: string }) {
   hideCallbacks.forEach(fn => fn());
@@ -58,6 +58,7 @@ const pages = {
   orders: () => import('../../src/pages/orders/index.vue'),
   menu: () => import('../../src/pages/menu/index.vue'),
   cart: () => import('../../src/pages/cart/index.vue'),
+  checkout: () => import('../../src/pages/checkout/index.vue'),
   dishes: () => import('../../src/pages/reservation/dishes.vue'),
   messages: () => import('../../src/pages/messages/index.vue'),
   chat: () => import('../../src/pages/order/chat.vue'),

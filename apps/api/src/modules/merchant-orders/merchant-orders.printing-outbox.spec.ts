@@ -2,12 +2,14 @@ import { effectiveOrderWhere } from '../orders/effective-order';
 import { MerchantOrdersService } from './merchant-orders.service';
 
 describe('MerchantOrdersService printing outbox', () => {
-  it('enqueues ACCEPTED intent in the exact order transition transaction', async () => {
+  it.each([{ orderType: 'DINE_IN', isReservation: false }, { orderType: 'PICKUP', isReservation: true }])('enqueues ACCEPTED intent in the exact transaction for $orderType, including legacy pickups', async ({ orderType, isReservation }) => {
     let insideTransaction = false;
     const accepted = {
       id: 37n,
       merchantId: 7n,
-      orderType: 'DINE_IN',
+      orderType, isReservation,
+      orderNo: 'HY20261021A037',
+      createdAt: new Date('2026-10-21T10:00:00Z'),
       status: 'ACCEPTED',
     };
     const tx = {
@@ -16,7 +18,8 @@ describe('MerchantOrdersService printing outbox', () => {
           .fn()
           .mockResolvedValueOnce({
             id: 37n,
-            orderType: 'DINE_IN',
+            orderType,
+            isReservation,
             status: 'PENDING_ACCEPTANCE',
           }),
         findFirstOrThrow: jest.fn().mockResolvedValue(accepted),
@@ -56,7 +59,7 @@ describe('MerchantOrdersService printing outbox', () => {
       {} as never,
     );
 
-    await expect(service.transition(7n, 3n, 37n, 'ACCEPT')).resolves.toEqual(
+    await expect(service.transition(7n, 3n, 37n, 'ACCEPT')).resolves.toMatchObject(
       accepted,
     );
 
@@ -71,12 +74,29 @@ describe('MerchantOrdersService printing outbox', () => {
         merchantId: 7n,
         orderId: 37n,
         orderStatusLogId: 9001n,
-        orderType: 'DINE_IN',
+        orderType,
         status: 'ACCEPTED',
       },
     );
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([501n]);
     expect(insideTransaction).toBe(false);
+  });
+
+  it('reuses the acceptance event when an old pickup begins preparation, so printing stays idempotent', async () => {
+    const prepared = { id: 39n, merchantId: 7n, orderType: 'PICKUP', isReservation: true,
+      status: 'PREPARING', orderNo: 'HY20261021A039', createdAt: new Date('2026-10-21T10:00:00Z') };
+    const tx = {
+      order: { findFirst: jest.fn().mockResolvedValue({ ...prepared, status: 'ACCEPTED' }),
+        findFirstOrThrow: jest.fn().mockResolvedValue(prepared), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      orderStatusLog: { create: jest.fn().mockResolvedValue({ id: 9004n }), findFirst: jest.fn().mockResolvedValue({ id: 9003n }) },
+    };
+    const printJobs = { enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([{ id: 503n }]),
+      processAutomaticTriggerIds: jest.fn().mockResolvedValue([]) };
+    const service = new MerchantOrdersService({ $transaction: jest.fn(work => work(tx)) } as never, printJobs as never, {} as never, {} as never, {} as never);
+    await expect(service.transition(7n, 3n, 39n, 'START_PREPARING')).resolves.toMatchObject(prepared);
+    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledWith(tx, {
+      merchantId: 7n, orderId: 39n, orderStatusLogId: 9003n, orderType: 'PICKUP', status: 'ACCEPTED',
+    });
   });
 
   it('returns the accepted order when immediate processing fails because intent is durable', async () => {

@@ -3,9 +3,9 @@ import { formatReservationTime, reservationTimestamp, reservationText, vietnamDa
 import { fulfillmentActionSequence, nextFulfillmentAction } from './fulfillment';
 
 describe('reservation fulfillment and local time', () => {
-  it('confirmation leaves a reservation waiting for an explicit preparation action', () => {
-    expect(fulfillmentActionSequence({ orderType: 'PICKUP', status: 'PENDING_ACCEPTANCE', isReservation: true }, 'accept')).toEqual(['accept']);
-    expect(nextFulfillmentAction({ orderType: 'PICKUP', status: 'ACCEPTED', isReservation: true })).toBe('start-preparing');
+  it('accepting a historical reservation pickup follows the ordinary preparation shortcut', () => {
+    expect(fulfillmentActionSequence({ orderType: 'PICKUP', status: 'PENDING_ACCEPTANCE', isReservation: true }, 'accept')).toEqual(['accept', 'start-preparing']);
+    expect(nextFulfillmentAction({ orderType: 'PICKUP', status: 'ACCEPTED', isReservation: true })).toBe('finish-preparing');
     expect(fulfillmentActionSequence({ orderType: 'PICKUP', status: 'ACCEPTED', isReservation: true }, 'start-preparing')).toEqual(['start-preparing']);
     expect(fulfillmentActionSequence({ orderType: 'PICKUP', status: 'PREPARING', isReservation: true }, 'finish-preparing')).toEqual(['ready']);
   });

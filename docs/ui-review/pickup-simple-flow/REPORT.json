@@ -1,0 +1,73 @@
+{
+  "pass": true,
+  "flows": [
+    "merchant appointment entrance → pickup menu → cart → ordinary checkout → ordinary pickup order",
+    "one accept action → making and KDS → ready → pickup and cash receipt → completed history",
+    "historical scheduled pickup with pending time proposal accepts directly into making and retains its recorded time",
+    "old pickup reservation URL and cached reservation cart return to ordinary checkout without losing dishes",
+    "dining remains seats-only booking with its existing time, guest count and confirmation workflow"
+  ],
+  "layouts": [
+    {
+      "width": 320,
+      "locale": "zh",
+      "scroll": 320
+    },
+    {
+      "width": 320,
+      "locale": "vi",
+      "scroll": 320
+    },
+    {
+      "width": 320,
+      "locale": "en",
+      "scroll": 320
+    },
+    {
+      "width": 390,
+      "locale": "zh",
+      "scroll": 390
+    },
+    {
+      "width": 390,
+      "locale": "vi",
+      "scroll": 390
+    },
+    {
+      "width": 390,
+      "locale": "en",
+      "scroll": 390
+    },
+    {
+      "width": 768,
+      "locale": "zh",
+      "scroll": 768
+    },
+    {
+      "width": 768,
+      "locale": "vi",
+      "scroll": 768
+    },
+    {
+      "width": 768,
+      "locale": "en",
+      "scroll": 768
+    },
+    {
+      "width": 1280,
+      "locale": "zh",
+      "scroll": 1280
+    },
+    {
+      "width": 1280,
+      "locale": "vi",
+      "scroll": 1280
+    },
+    {
+      "width": 1280,
+      "locale": "en",
+      "scroll": 1280
+    }
+  ],
+  "errors": []
+}

@@ -19,7 +19,7 @@ function normalizeContext(context: CartContext): CartContext {
     merchantId: context.merchantId,
     merchantName: context.merchantName || '',
     orderType: context.orderType,
-    reservation: context.orderType === 'PICKUP' || context.reservation === true || undefined,
+    reservation: (context.orderType === 'DINE_IN' && context.reservation === true) || undefined,
   };
   if (context.orderType === 'DINE_IN') {
     next.diningReservationId = next.reservation && /^\d+$/.test(context.diningReservationId || '') ? context.diningReservationId : undefined;

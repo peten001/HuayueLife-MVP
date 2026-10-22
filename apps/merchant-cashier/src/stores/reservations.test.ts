@@ -22,14 +22,14 @@ describe('reservation store', () => {
     expect(store.pending).toHaveLength(1); expect(mocks.toast).toHaveBeenCalledTimes(1);
     mocks.list.mockResolvedValue(response([row()])); await store.load(); expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
-  it('uses server time for preparation reminders and includes ASAP only after confirmation', async () => {
+  it('keeps all historical pickup stages outside dining reminders', async () => {
     mocks.list.mockResolvedValue(response([
       row({ id: '2', kind: 'PICKUP', status: 'CONFIRMED' }),
       row({ id: '3', kind: 'PICKUP', status: 'CONFIRMED', scheduledFor: '2026-10-19T14:00:00Z' }),
       row({ id: '4', kind: 'PICKUP', status: 'CONFIRMED', scheduledFor: null }),
       row({ id: '5', kind: 'PICKUP', status: 'PENDING', scheduledFor: null }),
     ]));
-    const store = useReservationsStore(); await store.load(); expect(store.pickupDue.map(item => item.id)).toEqual(['2', '4']);
+    const store = useReservationsStore(); await store.load(); expect(store.attentionCount).toBe(0);
     expect(store.reservations).toEqual([]);
     expect(store.pending).toEqual([]);
     expect(mocks.toast).not.toHaveBeenCalled();
@@ -45,7 +45,6 @@ describe('reservation store', () => {
     const store = useReservationsStore(); await store.load();
     expect(store.reservations.map(item => item.kind)).toEqual(['DINE_IN']);
     expect(store.pending).toHaveLength(1);
-    expect(store.pickupDue.map(item => item.id)).toEqual(['2']);
     expect(mocks.sound).toHaveBeenCalledWith(['1'], 'reservations:3');
   });
   it('surfaces reservation unread alerts, keeps closed history and clears only the selected reservation', async () => {

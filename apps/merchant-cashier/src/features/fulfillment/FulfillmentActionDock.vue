@@ -25,7 +25,6 @@ const { t } = useI18n();
 const action = computed(() => nextFulfillmentAction(props.order));
 const labelKey = computed(() => {
   if (action.value === 'accept') return 'order.action.accept';
-  if (action.value === 'start-preparing') return 'order.action.startPreparing';
   if (action.value === 'finish-preparing') return 'order.action.markReady';
   if (action.value === 'start-delivery') return 'order.action.startDelivery';
   if (action.value === 'complete' && props.order.orderType === 'PICKUP') return 'order.action.confirmPickup';
@@ -55,8 +54,7 @@ const icon = computed(() => {
       v-if="action"
       type="button"
       class="primary-action"
-      :disabled="loading || disabled || (action === 'start-preparing' && !!order.proposedScheduledFor)"
-      :title="action === 'start-preparing' && order.proposedScheduledFor ? t('fulfillment.pickupTimePending') : undefined"
+      :disabled="loading || disabled"
       @click="$emit('action', action)"
     >
       <component :is="icon" :size="20" aria-hidden="true" />

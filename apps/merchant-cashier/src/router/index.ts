@@ -161,6 +161,9 @@ router.beforeEach(async (to) => {
   }
 
   if (auth.isAuthenticated && !auth.mustChangePassword) {
+    if (canonicalCashierRouteName(to.name) === 'pickup-orders' && ['ACCEPTED', 'DUE'].includes(String(to.query.status))) {
+      return { path: to.path, query: { ...to.query, status: 'PREPARING' }, hash: to.hash, replace: true };
+    }
     // Resolve old bookmarks before mounting any workspace or navigation.
     // This also runs when only the bookmark's order query changes.
     if (to.name === 'legacy-new-orders' || to.name === 'legacy-active-orders') {

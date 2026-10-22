@@ -58,7 +58,7 @@ onLoad(async (options) => {
         ? merchantName(loadedProduct.merchant, locale.value)
         : '',
       orderType: String(options?.orderType ?? 'PICKUP') as OrderType,
-      reservation: String(options?.orderType ?? 'PICKUP') === 'PICKUP' || String(options?.reservation ?? '') === '1' || undefined,
+      reservation: (String(options?.orderType) === 'DINE_IN' && String(options?.reservation ?? '') === '1') || undefined,
       diningReservationId: String(options?.reservationId ?? '') || undefined,
       tableToken: tableToken || undefined,
       tableNo: tableNo || undefined,

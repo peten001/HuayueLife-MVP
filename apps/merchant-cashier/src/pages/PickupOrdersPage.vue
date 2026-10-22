@@ -3,8 +3,6 @@ import { ArrowLeft, MessageCircle, RefreshCw, XCircle } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
-import { formatReservationTime, reservationErrorText, reservationText, reservationTimestamp, vietnamDateTimeParts, type ReservationTextKey } from '@huayue-life/shared';
-import { updateReservation } from '@/api/reservations';
 import { useReservationsStore } from '@/stores/reservations';
 import { apiErrorTranslationKey } from '@/api';
 import { useMediaQuery } from '@/composables/useMediaQuery';
@@ -38,8 +36,7 @@ import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
 const filters = PICKUP_FILTERS;
 const route = useRoute();
 const router = useRouter();
-const { t, locale } = useI18n();
-const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
+const { t } = useI18n();
 const authStore = useAuthStore();
 const ordersStore = useOrdersStore();
 const reservationsStore = useReservationsStore();
@@ -61,17 +58,12 @@ const rejectOpen = ref(false);
 const adjustmentOpen = ref(false);
 const paymentOpen = ref(false);
 const paymentError = ref('');
-const scheduleEditing = ref(false);
-const scheduleSaving = ref(false);
-const scheduleTime = ref('');
-const scheduleError = ref('');
-let scheduleSequence = 0;
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
 const allOrders = computed(() => mergeOrders(pendingOrders.value, activeOrders.value)
   .filter((order) => order.orderType === 'PICKUP'));
-const filteredOrders = computed(() => allOrders.value.filter(order => matchesPickupFilter(order, filter.value, reservationsStore.serverNow)));
+const filteredOrders = computed(() => allOrders.value.filter(order => matchesPickupFilter(order, filter.value)));
 const order = computed(() => selectedOrder.value?.orderType === 'PICKUP' ? selectedOrder.value : null);
 const chatActive = computed(() => Boolean(order.value) && activePane.value === 'chat');
 const roundingDisabledReasonKey = computed(() => {
@@ -134,38 +126,6 @@ async function rejectOrder() {
   await runActionSequence(['reject']);
 }
 
-function editPickupTime() {
-  if (!order.value || scheduleSaving.value || writeDisabled.value) return;
-  const parts = vietnamDateTimeParts(Date.parse(order.value.proposedScheduledFor || order.value.scheduledFor || '') || Date.now() + 30 * 60_000);
-  scheduleTime.value = `${parts.date}T${parts.time}`;
-  scheduleError.value = '';
-  scheduleEditing.value = true;
-}
-
-async function savePickupTime() {
-  const current = order.value;
-  if (!current || scheduleSaving.value || writeDisabled.value) return;
-  let scheduledFor: string;
-  try {
-    const [day, time] = scheduleTime.value.split('T');
-    scheduledFor = reservationTimestamp(day, time);
-    if (Date.parse(scheduledFor) <= Date.now()) throw new Error();
-  } catch { scheduleError.value = rt('timeInvalid'); return; }
-  const sequence = ++scheduleSequence;
-  const merchantId = authStore.merchant?.id;
-  scheduleSaving.value = true;
-  scheduleError.value = '';
-  try {
-    await updateReservation('PICKUP', current.id, { action: 'PROPOSE_TIME', scheduledFor });
-    if (sequence !== scheduleSequence || authStore.merchant?.id !== merchantId) return;
-    scheduleEditing.value = false;
-    const results = await Promise.allSettled([ordersStore.refreshLiveOrders({ force: true }), reservationsStore.load()]);
-    if (results.some(result => result.status === 'rejected')) uiStore.pushToast(t('error.refreshFailed'), 'error');
-  } catch (caught) {
-    if (sequence === scheduleSequence) scheduleError.value = reservationErrorText(caught instanceof Error ? caught.message : 'REQUEST_FAILED', locale.value);
-  } finally { if (sequence === scheduleSequence) scheduleSaving.value = false; }
-}
-
 function openSettlementAdjustment() {
   if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
   adjustmentOpen.value = true;
@@ -183,7 +143,7 @@ async function saveSettlementAdjustment(input: { discountPayableRateBps: number 
 
 async function runActionSequence(actions: readonly MerchantOrderAction[], paymentMethod?: PaymentMethod) {
   const currentOrder = order.value;
-  if (!currentOrder || !actions.length || writeDisabled.value || actionLoadingId.value || scheduleSaving.value) return false;
+  if (!currentOrder || !actions.length || writeDisabled.value || actionLoadingId.value) return false;
   try {
     const result = await executeFulfillmentActionSequence({
       order: currentOrder,
@@ -214,10 +174,6 @@ async function runActionSequence(actions: readonly MerchantOrderAction[], paymen
 watch(
   () => route.params.orderId,
   async (value) => {
-    scheduleSequence += 1;
-    scheduleEditing.value = false;
-    scheduleSaving.value = false;
-    scheduleError.value = '';
     activePane.value = 'detail';
     const sequence = ++routeSequence;
     const id = typeof value === 'string' ? value : '';
@@ -276,20 +232,7 @@ function backToPickup() {
         <div class="fulfillment-main__body" :class="{ 'is-chat': activePane === 'chat' }">
           <template v-if="activePane === 'detail'">
             <LoadingState v-if="detailLoading" :label="t('orders.loading')" />
-            <PickupOrderDetail v-else-if="order" :order="order" :compact-facts="mobileViewport || mobileV2Preview">
-              <template #reservation-controls>
-                <section v-if="order.isReservation && ['PENDING_ACCEPTANCE', 'ACCEPTED'].includes(order.status)" class="workflow-section pickup-reservation-controls">
-                  <header><h3>{{ rt('pickupTime') }}</h3><button v-if="!scheduleEditing" type="button" class="secondary-action" :disabled="writeDisabled || scheduleSaving || !!actionLoadingId" @click="editPickupTime">{{ t('fulfillment.pickupChangeTime') }}</button></header>
-                  <p v-if="order.proposedScheduledFor" class="pickup-time-notice" role="status"><strong>{{ rt('changeProposed') }} · {{ formatReservationTime(order.proposedScheduledFor, locale) }}</strong><br />{{ t('fulfillment.pickupTimePending') }}</p>
-                  <form v-if="scheduleEditing" class="pickup-time-form" @submit.prevent="savePickupTime">
-                    <label>{{ rt('pickupTime') }}<input v-model="scheduleTime" type="datetime-local" :disabled="scheduleSaving" required /></label>
-                    <small>{{ rt('vietnamTime') }} · {{ rt('changeHint') }}</small>
-                    <div><button type="button" class="secondary-action" :disabled="scheduleSaving" @click="scheduleEditing = false">{{ rt('close') }}</button><button type="submit" class="primary-action" :disabled="scheduleSaving || writeDisabled">{{ scheduleSaving ? t('common.processing') : rt('save') }}</button></div>
-                  </form>
-                  <p v-if="scheduleError" class="pickup-time-error" role="alert">{{ scheduleError }}</p>
-                </section>
-              </template>
-            </PickupOrderDetail>
+            <PickupOrderDetail v-else-if="order" :order="order" :compact-facts="mobileViewport || mobileV2Preview" />
             <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
           </template>
           <div v-if="order" v-show="activePane === 'chat'" class="fulfillment-chat-pane">
@@ -297,9 +240,9 @@ function backToPickup() {
           </div>
         </div>
 
-        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled || scheduleSaving" :adjustment-loading="actionLoadingId === order.id" :adjustment-disabled="roundingDisabled" :adjustment-disabled-reason="roundingDisabledReasonKey ? t(roundingDisabledReasonKey) : ''" @action="runFulfillmentAction" @adjustment="openSettlementAdjustment">
+        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled" :adjustment-loading="actionLoadingId === order.id" :adjustment-disabled="roundingDisabled" :adjustment-disabled-reason="roundingDisabledReasonKey ? t(roundingDisabledReasonKey) : ''" @action="runFulfillmentAction" @adjustment="openSettlementAdjustment">
           <template #secondary>
-            <button v-if="['PENDING_ACCEPTANCE', 'ACCEPTED'].includes(order.status)" type="button" class="secondary-action secondary-action--danger" :disabled="writeDisabled || scheduleSaving || !!actionLoadingId" @click="rejectOpen = true"><XCircle :size="18" aria-hidden="true" />{{ t('order.action.reject') }}</button>
+            <button v-if="['PENDING_ACCEPTANCE', 'ACCEPTED'].includes(order.status)" type="button" class="secondary-action secondary-action--danger" :disabled="writeDisabled || !!actionLoadingId" @click="rejectOpen = true"><XCircle :size="18" aria-hidden="true" />{{ t('order.action.reject') }}</button>
           </template>
         </FulfillmentActionDock>
       </section>
@@ -329,6 +272,6 @@ function backToPickup() {
 </template>
 
 <style scoped>
-.pickup-queue-toolbar .workflow-filter-chips{flex-wrap:wrap;overflow:visible}.pickup-time-form .secondary-action{color:var(--cashier-text,#1f2d24);border:1px solid var(--cashier-border,#dce5df);background:var(--cashier-surface,#fff)}
-.pickup-reservation-controls header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.pickup-reservation-controls header .secondary-action{font-size:13px;min-height:36px}.pickup-time-notice{padding:12px 14px;border-radius:12px;background:#fff4db;color:#7a5b27;font-size:13px;line-height:1.7;overflow-wrap:anywhere}.pickup-time-form{display:grid;gap:12px;margin-top:12px}.pickup-time-form label{display:grid;gap:8px;font-size:13px}.pickup-time-form input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--cashier-border);border-radius:10px;background:var(--cashier-surface);color:var(--cashier-text);font:inherit}.pickup-time-form small{color:var(--cashier-text-secondary);line-height:1.6}.pickup-time-form>div{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.pickup-time-error{color:#c62828;font-size:13px;line-height:1.6}
+.pickup-queue-toolbar .workflow-filter-chips{flex-wrap:wrap;overflow:visible}
+
 </style>

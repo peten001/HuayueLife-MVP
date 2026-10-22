@@ -127,18 +127,18 @@ describe('cashier fulfilment V2 components', () => {
     expect(pickup.find('.order-items-section__heading').text()).toContain('3 份');
   });
 
-  it('keeps confirmed reservations waiting for preparation and blocks cooking until a proposed time is answered', () => {
+  it('uses ordinary pickup progress and completion actions for historical reservation orders', () => {
     const booked = { ...order, isReservation: true, scheduledFor: '2026-10-19T12:00:00Z', proposedScheduledFor: '2026-10-19T13:00:00Z' };
     const progress = mount(FulfillmentProgressRail, { props: { order: booked, showCurrentStatus: true } });
-    expect(progress.findAll('li')).toHaveLength(5);
-    expect(progress.get('li.is-current').text()).toContain('待备餐');
+    expect(progress.findAll('li')).toHaveLength(4);
+    expect(progress.get('li.is-current').text()).toContain('制作中');
     const card = mount(PickupOrderCard, { props: { order: booked } });
-    expect(card.get('.status-badge').text()).toBe('待备餐');
+    expect(card.get('.status-badge').text()).toBe('制作中');
     expect(card.text()).toContain('取餐时间');
-    expect(card.text()).toContain('等待顾客确认');
+    expect(card.text()).not.toContain('等待顾客确认');
     const dock = mount(FulfillmentActionDock, { props: { order: booked }, global: { stubs: { PrintJobActions: true } } });
-    expect(dock.get('.primary-action').attributes('disabled')).toBeDefined();
-    expect(dock.get('.primary-action').text()).toContain('开始制作');
+    expect(dock.get('.primary-action').attributes('disabled')).toBeUndefined();
+    expect(dock.get('.primary-action').text()).toContain('制作完成');
   });
 
   it('uses three localized compact pickup facts without a year in the mobile presentation', () => {

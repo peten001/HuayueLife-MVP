@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "date": "2026-10-21",
+  "apiTestFiles": 116,
+  "apiTests": 1365,
+  "cashierTestFiles": 97,
+  "cashierTests": 722,
+  "isolatedMysqlHttpTests": 32,
+  "workspaceTypecheck": "PASS",
+  "workspaceBuild": "PASS",
+  "cashierLint": "PASS",
+  "miniappTypecheck": "PASS",
+  "miniappWeixinBuild": "PASS",
+  "miniappQualityGuards": 6,
+  "miniappI18n": "PASS",
+  "browserFlows": 5,
+  "browserLayouts": 12,
+  "browserErrors": 0,
+  "designScanP0": 0,
+  "productionWrites": false,
+  "databaseMigrations": false,
+  "releaseStatus": "local only; not committed, pushed, deployed or uploaded"
+}

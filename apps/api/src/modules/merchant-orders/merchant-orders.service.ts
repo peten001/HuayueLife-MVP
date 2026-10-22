@@ -1531,9 +1531,6 @@ export class MerchantOrdersService {
       }
 
       const rule = this.resolveRule(action, order.orderType, order.status);
-      if (order.isReservation && action === 'START_PREPARING' && order.proposedScheduledFor) {
-        throw new ConflictException('预约时间变更待用户确认，请先联系用户处理');
-      }
       if (order.status !== rule.from) {
         throw new ConflictException(
           `订单当前状态为 ${order.status}，不能执行此操作`,
@@ -1559,7 +1556,7 @@ export class MerchantOrdersService {
             : undefined,
         paymentMethod: rule.to === 'COMPLETED' ? paymentMethod : undefined,
         cancelledAt: rule.to === 'CANCELLED' ? now : undefined,
-        proposedScheduledFor: rule.to === 'CANCELLED' ? null : undefined,
+        proposedScheduledFor: rule.to === 'CANCELLED' || (order.orderType === 'PICKUP' && ['ACCEPTED', 'PREPARING'].includes(rule.to)) ? null : undefined,
         cancelReason:
           rule.to === 'CANCELLED'
             ? reason?.trim() || '商家拒绝订单'
@@ -1586,15 +1583,20 @@ export class MerchantOrdersService {
               : rule.remark,
         },
       });
+      // Reuse the original acceptance event for old pickups that were already
+      // accepted before the simple flow returned. Its print keys stay stable,
+      // so an accept + prepare shortcut cannot print a second receipt.
+      const legacyAcceptance = order.orderType === 'PICKUP' && order.isReservation && rule.to === 'PREPARING'
+        ? await tx.orderStatusLog.findFirst({ where: { orderId: id, toStatus: 'ACCEPTED' }, orderBy: { id: 'desc' }, select: { id: true } })
+        : null;
       const printTriggers =
-        (rule.to === 'ACCEPTED' && !order.isReservation) || rule.to === 'COMPLETED'
-          || (rule.to === 'PREPARING' && order.isReservation)
+        rule.to === 'ACCEPTED' || rule.to === 'COMPLETED' || legacyAcceptance
           ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
               merchantId,
               orderId: id,
-              orderStatusLogId: statusLog.id,
+              orderStatusLogId: legacyAcceptance?.id ?? statusLog.id,
               orderType: order.orderType,
-              status: rule.to === 'PREPARING' ? 'ACCEPTED' : rule.to as 'ACCEPTED' | 'COMPLETED',
+              status: legacyAcceptance ? 'ACCEPTED' : rule.to as 'ACCEPTED' | 'COMPLETED',
             })
           : [];
 

@@ -577,7 +577,7 @@ async function openMenu(orderType: 'PICKUP' | 'DELIVERY' | 'DINE_IN') {
     return;
   }
   const merchantId = merchant.value.id;
-  const reservation = orderType !== 'DELIVERY';
+  const reservation = orderType === 'DINE_IN';
   const url = orderType === 'DINE_IN'
     ? `/pages/reservation/create?merchantId=${merchantId}&kind=DINE_IN`
     : `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}${reservation ? '&reservation=1' : ''}`;

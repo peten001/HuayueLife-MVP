@@ -272,7 +272,7 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     const winner = results.find(result => result.status === 201)!.body.data;
     expect((await action(row.id, 'CONFIRM').expect(201)).body.data.assignedTable).toEqual(winner.assignedTable);
   });
-  it('creates a future pickup while closed, holds kitchen work until start, and retains pickup time on its receipt', async () => {
+  it('keeps old-client pickup metadata while reporting the order to the kitchen on acceptance', async () => {
     await addItem('PICKUP').expect(201);
     const time = future(240);
     const row = (await pickup(time).expect(201)).body.data;
@@ -280,8 +280,7 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     expect(row).toMatchObject({ isReservation: true, status: 'PENDING_ACCEPTANCE', scheduledFor: time });
     await action(row.id, 'CONFIRM', {}, 'PICKUP').expect(201);
     await call('get', '/merchant/kds', undefined, staffToken).expect(200);
-    expect(await prisma.kdsTask.count({ where: { orderId } })).toBe(0);
-    expect(await prisma.printTriggerOutbox.count({ where: { orderId } })).toBe(0);
+    expect(await prisma.kdsTask.count({ where: { orderId } })).toBe(1);
     await call('post', `/merchant/orders/${row.id}/start-preparing`, {}, staffToken).expect(201);
     expect(await prisma.kdsTask.count({ where: { orderId } })).toBe(1);
     const receipt = await app.get(ReceiptSnapshotService).fromOrder(merchantId, orderId);
@@ -294,15 +293,15 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     await call('post', `/merchant/orders/${row.id}/cashier-complete`, { paymentMethod: 'CASH' }, staffToken).expect(201);
     expect((await call('get', `/orders/${row.id}`).expect(200)).body.data.status).toBe('COMPLETED');
   });
-  it('prevents pickup preparation while a time change is awaiting consent', async () => {
+  it('closes legacy pickup time proposals when preparing without changing the recorded pickup time', async () => {
     await addItem('PICKUP').expect(201);
     const row = (await pickup().expect(201)).body.data;
     await action(row.id, 'CONFIRM', {}, 'PICKUP').expect(201);
     const newTime = future(180);
     await action(row.id, 'PROPOSE_TIME', { scheduledFor: newTime }, 'PICKUP').expect(201);
-    await call('post', `/merchant/orders/${row.id}/start-preparing`, {}, staffToken).expect(409);
-    await call('post', `/reservations/PICKUP/${row.id}/reply-time`, { accept: false, proposedScheduledFor: newTime }).expect(201);
     await call('post', `/merchant/orders/${row.id}/start-preparing`, {}, staffToken).expect(201);
+    expect((await call('get', `/orders/${row.id}`).expect(200)).body.data).toMatchObject({ status: 'PREPARING', scheduledFor: row.scheduledFor, proposedScheduledFor: null });
+    await call('post', `/reservations/PICKUP/${row.id}/reply-time`, { accept: false, proposedScheduledFor: newTime }).expect(409);
   });
   it('blocks new reservations after the merchant disables the service, while keeping existing requests', async () => {
     await call('patch', '/merchant/profile', { dineInReservationEnabled: null }, staffToken).expect(400);

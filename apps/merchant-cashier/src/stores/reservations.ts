@@ -6,7 +6,6 @@ import { useAuthStore } from './auth';
 import { useI18n } from '@/i18n';
 import { useUiStore } from './ui';
 import { useSoundStore } from './sound';
-import { pickupPreparationDue } from '@/domain/pickup-queue';
 import { reservationsByTable } from '@/domain/reservation-queue';
 
 export const useReservationsStore = defineStore('cashier-reservations', () => {
@@ -24,8 +23,6 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
   const pending = computed(() => reservations.value.filter(row => row.status === 'PENDING'));
   const unread = computed(() => reservations.value.filter(row => (row.chatConversation?.merchantUnreadCount ?? 0) > 0));
   const attentionCount = computed(() => reservations.value.filter(row => row.status === 'PENDING' || (row.chatConversation?.merchantUnreadCount ?? 0) > 0).length);
-  const pickupDue = computed(() => arrivals.value.filter(row => row.kind === 'PICKUP' && row.status === 'CONFIRMED'
-    && pickupPreparationDue(row.scheduledFor, serverNow.value)));
   function load() {
     if (inFlight) return inFlight;
     const auth = useAuthStore();
@@ -78,5 +75,5 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
     arrivals.value = arrivals.value.map(row => row.kind === 'DINE_IN' && row.id === id ? { ...row, chatConversation: conversation } : row);
   }
   function reset() { generation += 1; arrivals.value = []; error.value = ''; actionId.value = ''; inFlight = null; loading.value = false; seen.clear(); merchantSnapshot = ''; }
-  return { reservations, byTable, loading, error, actionId, serverNow, pending, unread, attentionCount, updateChatSummary, pickupDue, load, act, reset };
+  return { reservations, byTable, loading, error, actionId, serverNow, pending, unread, attentionCount, updateChatSummary, load, act, reset };
 });

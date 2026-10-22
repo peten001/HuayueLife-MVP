@@ -130,8 +130,8 @@ onLoad(async (options) => {
 
   merchantId.value = String(options?.merchantId ?? '');
   orderType.value = (String(options?.orderType ?? 'PICKUP') as OrderType);
-  reservation.value = orderType.value === 'PICKUP' || String(options?.reservation ?? '') === '1';
-  diningReservationId.value = String(options?.reservationId ?? '');
+  reservation.value = orderType.value === 'DINE_IN' && String(options?.reservation ?? '') === '1';
+  diningReservationId.value = reservation.value ? String(options?.reservationId ?? '') : '';
   if (reservation.value && orderType.value === 'DINE_IN') {
     if (!/^\d+$/.test(diningReservationId.value)) {
       uni.redirectTo({ url: `/pages/reservation/create?merchantId=${merchantId.value}&kind=DINE_IN` });

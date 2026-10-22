@@ -60,7 +60,6 @@ export function packingFeeVnd(
 
 export function nextFulfillmentAction(order: Pick<MerchantOrder, 'orderType' | 'status' | 'isReservation'>) {
   if (order.status === 'PENDING_ACCEPTANCE') return 'accept' as const;
-  if (order.isReservation && order.status === 'ACCEPTED') return 'start-preparing' as const;
   if (order.status === 'ACCEPTED' || order.status === 'PREPARING') {
     return 'finish-preparing' as const;
   }
@@ -81,7 +80,6 @@ export function fulfillmentActionSequence(
   action: FulfillmentWorkflowAction,
 ): readonly MerchantOrderAction[] {
   if (action === 'accept' && order.status === 'PENDING_ACCEPTANCE') {
-    if (order.isReservation) return ['accept'];
     return ['accept', 'start-preparing'];
   }
   if (action === 'start-preparing' && order.status === 'ACCEPTED') return ['start-preparing'];

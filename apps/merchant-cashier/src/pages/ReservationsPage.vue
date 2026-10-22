@@ -62,7 +62,7 @@ const selectableTables = computed(() => tables.value.filter(table => dialog.valu
 
 onMounted(() => { void store.load(); });
 watch(() => route.query.view, value => {
-  if (value === 'due') void router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'pickup-orders', query: { status: 'DUE' } }));
+  if (value === 'due') void router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'pickup-orders', query: { status: 'PREPARING' } }));
 }, { immediate: true });
 watch(() => auth.merchant?.id, () => { tableRequest++; dialog.value = ''; tables.value = []; });
 watch(dialog, async value => {
