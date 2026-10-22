@@ -3,7 +3,8 @@
 - 日期：2026-10-22（越南时间）。
 - 版本：`desktop-order-audio-20261022-v1`。
 - 用户授权：只提交、推送、发布电脑版本，手机暂不修改。
-- 发布结果：候选准备中，最终状态以部署凭证为准。
+- 发布结果：已提交并同步 GitHub main，电脑收银和电脑 KDS 已上线。
+- 代码：[07ed86e](https://github.com/peten001/HuayueLife-MVP/commit/07ed86e6df208ac9330bc8af720b02b5bce1958c)，源码树 `c78c0d76ec7927ac42c29ebd26fc38733ef00d5b`。
 
 ## 范围
 
@@ -18,3 +19,20 @@
 只更新 `/var/www/huayue-cashier` 和 `/var/www/huayue-kds` 静态指针；先完整备份当前目录并逐文件验证，候选保留旧哈希资源，失败同时回退。API 编译产物／依赖指针、进程 PID／重启次数、配置、Nginx、后台及门店开关保持；无数据库迁移，无生产订单、消息、打印或收款测试。
 
 发布前预核对：收银当前 `pickup-simple-20261022-v1`，KDS 当前 `arrival-reservations-20261019-v1`；API online，PID `2657599`，重启次数 `18`。备份计划 `/opt/backups/yunqiao-desktop-order-audio-20261022-v1`。
+
+## 发布结果
+
+两端当前均指向 `desktop-order-audio-20261022-v1`，服务器及本机外网各核对收银 69、KDS 28 个文件（共 97 个），SHA-256 全部匹配发布包；健康 200，未认证订单／KDS 401。生产收银现有登录下已核对新的电脑声音设置；390px 手机实际打开原“通知设置”，只有原后台通知开关，没有新的声音选项。未开启／试听生产设备声音、未操作任何订单、打印、消息或收款。KDS 登录入口加载正常，两端浏览器无脚本错误；有账号后的 KDS 实际制作流程仍沿用原权限，不以生产测试订单重复验证。
+
+API 保持 PID `2657599`、重启计数 `18`、online。API dist 全文件清单、依赖与运行指针、环境哈希、Nginx、后台及兼容入口保持；没有迁移、进程重启或数据写入。新版额外保留收银 687、KDS 132 个旧哈希资源，供已打开的旧标签页过渡。
+
+备份 `/opt/backups/yunqiao-desktop-order-audio-20261022-v1`：
+
+| 旧目录备份 | 大小 | 文件数 | SHA-256 |
+| --- | --- | --- | --- |
+| 收银 | 6,464,278 bytes | 719 | `9653e0474177726424835fb37617c56a041a158856339c734a14c19ed7eb0700` |
+| KDS | 2,469,788 bytes | 151 | `f8d913872ddccc5eba080ec91ddb4e108b36875a55922fa115823849bc3cf1e9` |
+
+两份归档逐文件校验通过，原目标目录保持。`DEPLOYMENT_PASS.json` 在服务器备份目录，`PUBLIC_PASS.json` 为本机外网校验；均 PASS。本轮仅静态页面，没有数据库备份或迁移需求。回退执行 `sudo python3 /opt/backups/yunqiao-desktop-order-audio-20261022-v1/deploy-static.py rollback`，脚本先核对当前版本及原目录，再同时恢复两个静态指针，保留生产新增数据。
+
+线上实图仅保存在本机会话 `outputs/desktop-order-audio-online/`，不推送业务页面截图；仓库截图使用隔离演示数据。
