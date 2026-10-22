@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "release": "pickup-simple-20261022-v1",
+  "sourceCommit": "ccb73d98c4a5e8b57012052df4b13fed70e4aaa5",
+  "process": {
+    "status": "online",
+    "pid": 2657599,
+    "restartCount": 18,
+    "unstableRestarts": 0,
+    "cwd": "/opt/HuayueLife-MVP/apps/api",
+    "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+  },
+  "apiOverlayFiles": 6,
+  "databaseMigrations": false,
+  "apiFilesMatchCandidate": true,
+  "settingsConfigsKdsAndAdminUnchanged": true,
+  "cashierNewRelease": true,
+  "authenticatedBusinessRequests": false
+}

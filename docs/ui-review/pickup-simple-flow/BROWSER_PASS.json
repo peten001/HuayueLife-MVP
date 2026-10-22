@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "name": "cashier",
+      "width": 390,
+      "status": 200,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/pickup",
+      "title": "YunQiao Cashier",
+      "scroll": 390,
+      "textLength": 76
+    },
+    {
+      "name": "cashier",
+      "width": 1366,
+      "status": 200,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/pickup",
+      "title": "YunQiao Cashier",
+      "scroll": 1366,
+      "textLength": 76
+    }
+  ],
+  "errors": []
+}

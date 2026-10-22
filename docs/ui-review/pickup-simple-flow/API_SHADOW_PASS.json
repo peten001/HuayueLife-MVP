@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "loopback": "127.0.0.1:3920",
+  "health": 200,
+  "routeUnauthenticated": 401,
+  "authenticatedBusinessRequests": false,
+  "productionBusinessWrites": false
+}

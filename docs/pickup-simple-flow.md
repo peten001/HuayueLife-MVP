@@ -1,6 +1,6 @@
 # 打包自取恢复普通流程
 
-日期：2026-10-21。状态：本地完成，未提交、推送、部署或上传小程序。
+开发与本地验收：2026-10-21。状态：2026-10-22 已提交、推送 GitHub main 并上线 API 与收银，代码 `ccb73d98c4a5e8b57012052df4b13fed70e4aaa5`，版本 `pickup-simple-20261022-v1`。小程序已构建并打开微信工具，仍由用户手动上传体验版；未代用户上传或正式发布。见 [发布记录](release/pickup-simple-20261022-v1.md)。
 
 用户要求：恢复之前的到店自取流程，只将顾客入口放在“预约到店 → 打包自取”。
 
@@ -31,4 +31,6 @@
 
 ## 发布范围
 
-需要同步 API 与收银；小程序由用户重新上传体验版／发布。KDS 静态页和后台页面无改动，无数据库迁移或依赖升级。后端恢复已接单自取报厨后，历史预约自取的远期时间也只作参考，不再自动等待到约定时间前 30 分钟。当前生产保持上一次已发布版本。
+API 与收银已同步上线；小程序由用户重新上传体验版／发布。KDS 静态页和后台页面无改动，无数据库迁移或依赖升级。后端恢复已接单自取报厨，历史预约自取的远期时间也只作参考，不再自动等待到约定时间前 30 分钟。旧小程序请求继续兼容，商家统一普通自取履约；新顾客入口和普通结算需用户完成小程序上传及发布后生效。
+
+服务器、外网和浏览器凭证均 PASS，见 [API 发布](ui-review/pickup-simple-flow/API_DEPLOYMENT_PASS.json)、[最终运行状态](ui-review/pickup-simple-flow/API_FINAL_PASS.json)、[收银发布](ui-review/pickup-simple-flow/DEPLOYMENT_PASS.json)、[外网资源](ui-review/pickup-simple-flow/PUBLIC_PASS.json)、[手机／电脑入口](ui-review/pickup-simple-flow/BROWSER_PASS.json) 与 [小程序构建](ui-review/pickup-simple-flow/MINIAPP_BUILD_PASS.json)。未使用生产账号执行接单、制作、取餐或发送消息；业务流程验证使用隔离本地数据。

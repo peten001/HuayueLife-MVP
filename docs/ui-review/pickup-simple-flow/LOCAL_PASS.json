@@ -19,5 +19,7 @@
   "designScanP0": 0,
   "productionWrites": false,
   "databaseMigrations": false,
-  "releaseStatus": "local only; not committed, pushed, deployed or uploaded"
+  "releaseStatus": "2026-10-22 committed and pushed; API and cashier deployed; MiniApp manual upload pending",
+  "release": "pickup-simple-20261022-v1",
+  "sourceCommit": "ccb73d98c4a5e8b57012052df4b13fed70e4aaa5"
 }

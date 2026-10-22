@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "release": "pickup-simple-20261022-v1",
+  "sourceCommit": "ccb73d98c4a5e8b57012052df4b13fed70e4aaa5",
+  "sourcePatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "apiTarget": "/opt/huayue-api-releases/pickup-simple-20261022-v1/runtime/apps/api/dist",
+  "dependencyVersionsUnchanged": true,
+  "runtimeBackupBytes": 89141977,
+  "runtimeBackupSha256": "30eb103c2a0c8a0083f4d9ad7bf04e8818efe46c71ef93c5fd97d347b34b841b",
+  "process": {
+    "status": "online",
+    "pid": 2657599,
+    "restartCount": 18,
+    "unstableRestarts": 0,
+    "cwd": "/opt/HuayueLife-MVP/apps/api",
+    "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+  },
+  "checks": {
+    "health": 200,
+    "unauthenticatedPaths": [
+      "/merchant/orders",
+      "/merchant/reservations",
+      "/reservations",
+      "/merchant/kds"
+    ],
+    "status": 401,
+    "authenticatedBusinessRequests": false
+  },
+  "routeUnauthenticated": 401,
+  "authenticatedBusinessRequests": false,
+  "databaseBackup": {
+    "bytes": 64280435,
+    "uncompressedBytes": 800393049,
+    "sha256": "e2768af8e33ddd74ec95465de00476ab58ffc7f8d2f03e4722cd473740059278",
+    "gzipIntegrity": "PASS"
+  },
+  "webConfigUploadsUnchanged": true,
+  "databaseMigrations": false,
+  "productionBusinessWrites": false
+}

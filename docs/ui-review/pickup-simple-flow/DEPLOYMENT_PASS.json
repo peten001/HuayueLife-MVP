@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "release": "pickup-simple-20261022-v1",
+  "activeTarget": "/var/www/huayue-cashier-releases/pickup-simple-20261022-v1",
+  "previousTarget": "/var/www/huayue-cashier-releases/reservation-toolbar-20261021-v1",
+  "http": {
+    "resourceCount": 69,
+    "apiHealth": 200,
+    "unauthenticatedKds": 401,
+    "cashierDeepLink": "PASS",
+    "kdsEntryUnchanged": "PASS"
+  },
+  "verifiedFiles": 69,
+  "preservedAssetCount": 650,
+  "previousBackupBytes": 6161950,
+  "previousBackupSha256": "8cbf2790a37e2a1d88f8ca7e53699560210ae44f3a609f95149174c9ed24936a",
+  "apiProcess": {
+    "status": "online",
+    "pid": 2657599,
+    "restartCount": 18,
+    "unstableRestarts": 0
+  },
+  "apiKdsConfigUnchanged": true,
+  "adminAndAliasesUnchanged": true,
+  "sourceState": "committed and pushed source with SHA-256 manifests",
+  "sourceCommit": "ccb73d98c4a5e8b57012052df4b13fed70e4aaa5",
+  "databaseMigrations": false,
+  "productionBusinessWrites": false,
+  "serverTimestamp": "2026-10-22T00:16:59Z"
+}

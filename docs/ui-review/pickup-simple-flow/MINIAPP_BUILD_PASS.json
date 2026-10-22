@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "productionApi": true,
+  "privateToolConfigurationUnchanged": true,
+  "weixinBuild": "PASS",
+  "typecheck": "PASS",
+  "qualityGuards": 6,
+  "wechatToolOpened": true,
+  "uploaded": false,
+  "sourceCommit": "ccb73d98c4a5e8b57012052df4b13fed70e4aaa5"
+}
