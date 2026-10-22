@@ -39,6 +39,8 @@ import ToastRegion from '@/components/common/ToastRegion.vue';
 import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
 import { pendingFulfillmentAlerts, unseenFulfillmentOrderIds } from '@/features/inbox/fulfillment-alerts';
 import OrderPushControl from '@/features/inbox/OrderPushControl.vue';
+import SoundSettingsDialog from '@/features/sound/SoundSettingsDialog.vue';
+import { useLegacySoundStore } from '@/stores/legacy-sound';
 import {
   cashierPresentationWorkspace,
   canonicalCashierRouteName,
@@ -56,13 +58,15 @@ const reservationsStore = useReservationsStore();
 const printingStore = usePrintingStore();
 const tablesStore = useTablesStore();
 const networkStore = useNetworkStore();
-const soundStore = useSoundStore();
+const soundStore = useSoundStore('cashier');
+const legacySound = useLegacySoundStore();
 const uiStore = useUiStore();
 const { session, profile, isAuthenticated, demoMode } = storeToRefs(authStore);
 const { pendingOrders } = storeToRefs(ordersStore);
 const { tableCards } = storeToRefs(tablesStore);
 const { online, apiReachable } = storeToRefs(networkStore);
-const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
+const { active: soundEnabled } = storeToRefs(soundStore);
+const soundSettingsOpen = ref(false);
 const { availability: printingAvailability } = storeToRefs(printingStore);
 const loggingOut = ref(false);
 const inboxOpen = ref(false);
@@ -178,6 +182,7 @@ async function logout() {
   try {
     livePolling.stop();
     await pushControl.value?.disable();
+    soundStore.resetMerchant();
     ordersStore.clear();
     tablesStore.clear();
     catalogStore.clear();
@@ -190,10 +195,7 @@ async function logout() {
   }
 }
 
-async function toggleSound() {
-  if (soundEnabled.value && soundStore.unlocked) soundStore.disable();
-  else await soundStore.enable();
-}
+function toggleSound() { if (!mobileV2Presentation.value) soundSettingsOpen.value = true; }
 
 async function openNewOrders() {
   if (!pendingOrders.value.length) return;
@@ -305,6 +307,7 @@ watch(isAuthenticated, async (authenticated) => {
   if (!authenticated) reservationsStore.reset();
   if (!authenticated && !loggingOut.value) {
     livePolling.stop();
+    soundStore.resetMerchant();
     ordersStore.clear();
     tablesStore.clear();
     catalogStore.clear();
@@ -319,6 +322,13 @@ watch(
   { immediate: true },
 );
 
+watch(mobileV2Presentation, mobile => {
+  if (mobile) { soundSettingsOpen.value = false; soundStore.resetMerchant(); }
+});
+watch(() => legacySound.lastError, error => {
+  if (mobileV2Presentation.value && error) uiStore.pushToast(t('sound.unlockFailed'), 'warning');
+});
+
 watch(
   () => [online.value, apiReachable.value] as const,
   ([nextOnline, nextApi], previous) => {
@@ -326,10 +336,6 @@ watch(
     if (recovered) void recoverData();
   },
 );
-
-watch(soundError, (error) => {
-  if (error) uiStore.pushToast(t('sound.unlockFailed'), 'warning');
-});
 
 watch(
   () => [
@@ -372,6 +378,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  soundStore.resetMerchant();
   livePolling.stop();
   catalogPrefetch.stop();
   document.removeEventListener('visibilitychange', catalogPrefetch.handleVisibilityChange);
@@ -453,7 +460,7 @@ onBeforeUnmount(() => {
       :api-reachable="apiReachable"
       :reconnecting="online && apiReachable === null"
       :sound-enabled="soundEnabled"
-      :sound-supported="soundSupported"
+      :sound-supported="true"
       :printing-availability="printingAvailability"
       :active-table-filter="activeTableFilter"
       :refreshing-tables="refreshingTables"
@@ -477,6 +484,7 @@ onBeforeUnmount(() => {
     </template>
     <NewOrderInbox :open="inboxOpen" :orders="inboxOrders" :auto="autoAlertOpen" @close="closeInbox" @select="openInboxOrder" />
     <OrderPushControl v-if="!demoMode" ref="pushControl" :mobile="mobileV2Presentation" />
+    <SoundSettingsDialog v-if="soundSettingsOpen && !mobileV2Presentation" @close="soundSettingsOpen = false" />
     <ToastRegion />
   </div>
 </template>

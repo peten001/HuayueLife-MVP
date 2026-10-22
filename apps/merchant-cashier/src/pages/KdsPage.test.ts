@@ -8,23 +8,27 @@ import { CashierApiError } from '@/api/error';
 import { setLocale } from '@/i18n';
 import { kdsText } from '@/features/kds/kds-text';
 
+const notifySound = vi.hoisted(() => vi.fn());
+const legacySoundMock = vi.hoisted(() => ({ enabled: false, unlocked: false, notifyNewOrders: vi.fn(), resetMerchant: vi.fn(), enable: vi.fn(), disable: vi.fn() }));
+vi.mock('@/stores/legacy-sound', () => ({ useLegacySoundStore: () => legacySoundMock }));
 const testAuth = vi.hoisted(() => ({ role: 'OWNER', profile: null as null | {
   nameZh: string; nameVi: string; coverUrl: string; businessHours: Record<string, string[]>;
 } }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ role: testAuth.role, profile: testAuth.profile, demoMode: false, session: { id: '1' }, merchant: { id: '1', nameZh: '测试门店' } }) }));
-vi.mock('@/stores/sound', () => ({ useSoundStore: () => ({ enabled: false, notifyNewOrders: vi.fn(), resetMerchant: vi.fn(), enable: vi.fn(), disable: vi.fn() }) }));
+vi.mock('@/stores/sound', () => ({ useSoundStore: () => ({ enabled: false, mode: 'both', volume: 70, lastError: '', supported: true, setMode: vi.fn(), setVolume: vi.fn(), preview: vi.fn(), notifyNewOrders: notifySound, resetMerchant: vi.fn(), enable: vi.fn(), disable: vi.fn() }) }));
 vi.mock('@/api/kds', () => ({ getKdsBoard: vi.fn(), runKdsAction: vi.fn(), packKdsOrder: vi.fn(), saveKdsSettings: vi.fn(), undoKdsOperation: vi.fn() }));
 let wrapper: VueWrapper;
 let data: KdsBoard;
 beforeEach(() => {
   vi.mocked(runKdsAction).mockReset().mockResolvedValue({ operationId: 'made', replay: false });
   vi.mocked(saveKdsSettings).mockReset();
+  notifySound.mockClear();
   testAuth.role = 'OWNER';
   testAuth.profile = null;
   data = demoKds.board();
   vi.mocked(getKdsBoard).mockImplementation(async () => JSON.parse(JSON.stringify(data)) as KdsBoard);
 });
-afterEach(() => { wrapper?.unmount(); setLocale('zh'); vi.clearAllMocks(); vi.restoreAllMocks(); });
+afterEach(() => { wrapper?.unmount(); setLocale('zh'); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function open() {
   wrapper = mount(KdsPage, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } });
   await flushPromises();
@@ -35,6 +39,30 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it('keeps mobile on its existing sound toggle and hides the new desktop preferences', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    await open(); await wrapper.get('.kds-tools button[aria-label="声音"]').trigger('click');
+    expect(legacySoundMock.enable).toHaveBeenCalled();
+    expect(wrapper.find('.kds-settings-dialog').exists()).toBe(false);
+    await wrapper.get('.kds-tools button[aria-label="厨显设置"]').trigger('click');
+    expect(wrapper.find('.sound-preferences').exists()).toBe(false);
+    expect(notifySound).not.toHaveBeenCalled();
+    expect(legacySoundMock.notifyNewOrders).toHaveBeenCalledWith([], 'kds:1');
+    vi.unstubAllGlobals();
+  });
+  it('observes actual kitchen order metadata without tying audio to modes or search', async () => {
+    await open();
+    expect(notifySound).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: data.tasks[0]!.orderId, orderType: 'DINE_IN', tableNo: '01' }),
+    ]), '1');
+    const calls = notifySound.mock.calls.length;
+    await button('汇总划菜'); await wrapper.get('.kds-search input').setValue('不存在的菜');
+    expect(notifySound).toHaveBeenCalledTimes(calls);
+  });
+  it('does not observe an empty audio baseline when the kitchen request fails', async () => {
+    vi.mocked(getKdsBoard).mockRejectedValueOnce(new Error('offline'));
+    await open(); expect(notifySound).not.toHaveBeenCalled();
+  });
   it.each(['zh', 'vi', 'en'] as const)('names the returned-dish page as history in %s', async language => {
     setLocale(language);
     await open();

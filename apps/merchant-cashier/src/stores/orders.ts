@@ -30,6 +30,8 @@ import type {
   SettlementAdjustmentInput,
 } from '@/types';
 import { useAuthStore } from './auth';
+import { useLegacySoundStore } from './legacy-sound';
+import { isDesktopSoundPresentation } from '@/features/sound/sound-presentation';
 import { useSoundStore } from './sound';
 
 export const useOrdersStore = defineStore('cashier-orders', () => {
@@ -84,7 +86,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
         const nextOrders = mergeOrders(result);
         if (generation === dataGeneration && revision === liveQueryRevision) {
           pendingOrders.value = nextOrders;
-          notifyPendingSnapshot();
+          notifyLiveSoundSnapshot(false);
         }
         return nextOrders;
       })
@@ -158,7 +160,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
         activeOrders.value = mergeOrders(
           orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status)),
         );
-        notifyPendingSnapshot();
+        notifyLiveSoundSnapshot();
         lastLiveRefreshAt.value = new Date().toISOString();
         await refreshSelectedOrder();
       })
@@ -459,7 +461,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
         order,
       );
     }
-    notifyPendingSnapshot();
+    notifyLiveSoundSnapshot(false);
   }
 
   function applyOrderSnapshot(order: MerchantOrder, select = false) {
@@ -473,13 +475,22 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     updateCachedOrder(order);
   }
 
-  function notifyPendingSnapshot() {
+  function notifyLiveSoundSnapshot(authoritative = true) {
     const auth = useAuthStore();
     const merchantId = auth.merchant?.id ?? pendingOrders.value[0]?.merchantId;
     if (merchantId) {
-      useSoundStore().notifyNewOrders(
-        pendingOrders.value.map((order) => order.id),
+      if (!isDesktopSoundPresentation()) {
+        useLegacySoundStore().notifyNewOrders(pendingOrders.value.map(order => order.id), merchantId);
+        return;
+      }
+      useSoundStore('cashier').notifyNewOrders(
+        liveOrders.value.map((order) => ({
+          id: order.id, orderType: order.orderType, tableNo: order.tableNoSnapshot ?? order.table?.tableNo,
+          // QR dine-in orders are auto-accepted. Staff-entered orders are already visible locally.
+          announce: !order.createdByStaffId && (order.status === 'PENDING_ACCEPTANCE' || (order.orderType === 'DINE_IN' && Boolean(order.userId))),
+        })),
         merchantId,
+        authoritative,
       );
     }
   }

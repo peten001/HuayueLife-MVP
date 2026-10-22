@@ -6,6 +6,8 @@ import { useAuthStore } from './auth';
 import { useI18n } from '@/i18n';
 import { useUiStore } from './ui';
 import { useSoundStore } from './sound';
+import { useLegacySoundStore } from './legacy-sound';
+import { isDesktopSoundPresentation } from '@/features/sound/sound-presentation';
 import { reservationsByTable } from '@/domain/reservation-queue';
 
 export const useReservationsStore = defineStore('cashier-reservations', () => {
@@ -42,7 +44,8 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
         useUiStore().pushToast(reservationText('newReservation', locale.value), 'info', 8000);
       }
       seen = new Set(pendingDining.map(row => row.id));
-      useSoundStore().notifyNewOrders(pendingDining.map(row => row.id), `reservations:${merchantId}`);
+      const sound = isDesktopSoundPresentation() ? useSoundStore('cashier') : useLegacySoundStore();
+      sound.notifyNewOrders(pendingDining.map(row => row.id), `reservations:${merchantId}`);
     }).catch(caught => {
       if (currentGeneration === generation) error.value = reservationErrorText(caught instanceof Error ? caught.message : 'REQUEST_FAILED', useI18n().locale.value);
     }).finally(() => {

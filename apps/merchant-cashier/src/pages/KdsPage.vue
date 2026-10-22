@@ -6,6 +6,10 @@ import { getKdsBoard, runKdsAction, saveKdsSettings, undoKdsOperation } from '@/
 import { apiErrorTranslationKey, isMutationOutcomeUncertain, messageFromApiError } from '@/api/error';
 import { useAuthStore } from '@/stores/auth';
 import { useSoundStore } from '@/stores/sound';
+import { kitchenOrderAlerts } from '@/features/sound/new-order-alerts';
+import SoundPreferences from '@/features/sound/SoundPreferences.vue';
+import { useLegacySoundStore } from '@/stores/legacy-sound';
+import { useMediaQuery } from '@/composables';
 import { useI18n, type Locale } from '@/i18n';
 import { isKdsTerminal } from '@/config/terminal';
 import { canMakeKitchenTask, groupKitchenOrders, groupKitchenTasks, orderKitchenProgress, pendingQuantity, servingQuantity } from '@/features/kds/kds-domain';
@@ -21,7 +25,9 @@ import { kdsRequestKey, kdsText, type KdsTextKey } from '@/features/kds/kds-text
 import type { KdsBoard, KdsLine, KdsOperation, KdsOrderType, KdsSettings, KdsTask } from '@/features/kds/kds-types';
 
 const auth = useAuthStore();
-const sound = useSoundStore();
+const sound = useSoundStore('kds');
+const legacySound = useLegacySoundStore();
+const mobileAudio = useMediaQuery('(max-width: 899px)');
 const { locale, setLocale, t: commonText } = useI18n();
 const t = (key: KdsTextKey) => kdsText(locale.value, key);
 const board = ref<KdsBoard | null>(null);
@@ -60,8 +66,8 @@ let refreshing = false;
 let refreshQueued = false;
 let mutationEpoch = 0;
 let mounted = true;
-let seen = new Map<string, number>();
-let soundObserved = false;
+let legacySeen = new Map<string, number>();
+let legacySoundObserved = false;
 
 const writeDisabled = computed(() => busy.value || Boolean(uncertainMutation.value) || !connected.value || !board.value?.settings.enabled);
 const canConfigure = computed(() => ['OWNER', 'MANAGER'].includes(auth.role ?? '') || auth.demoMode);
@@ -233,13 +239,16 @@ async function refresh() {
   try {
     const result = await getKdsBoard();
     if (!mounted || epoch !== mutationEpoch) return;
-    const increases = result.tasks.filter(task => seen.has(task.id) ? task.quantity > seen.get(task.id)! : pendingQuantity(task) > 0);
-    if (soundObserved && increases.length) {
-      sound.notifyNewOrders([`kds:${result.serverTime}`], `kds:${auth.merchant?.id ?? 'demo'}`);
+    if (mobileAudio.value) {
+      const increases = result.tasks.filter(task => legacySeen.has(task.id) ? task.quantity > legacySeen.get(task.id)! : pendingQuantity(task) > 0);
+      const merchantKey = `kds:${auth.merchant?.id ?? 'demo'}`;
+      if (legacySoundObserved && increases.length) legacySound.notifyNewOrders([`kds:${result.serverTime}`], merchantKey);
+      if (!legacySoundObserved) legacySound.notifyNewOrders([], merchantKey);
+      legacySoundObserved = true;
+      legacySeen = new Map(result.tasks.map(task => [task.id, task.quantity]));
+    } else {
+      sound.notifyNewOrders(kitchenOrderAlerts(result.tasks, station.value, result.settings.enabled), auth.merchant?.id ?? 'demo');
     }
-    if (!soundObserved) sound.notifyNewOrders([], `kds:${auth.merchant?.id ?? 'demo'}`);
-    soundObserved = true;
-    seen = new Map(result.tasks.map(task => [task.id, task.quantity]));
     kitchenClock.synchronize(result.serverTime);
     kitchenNow.value = kitchenClock.now();
     board.value = result;
@@ -347,7 +356,10 @@ function routeStation(categoryId: string, value: string) {
   draftSettings.value.categoryRoutes = draftSettings.value.categoryRoutes.filter(route => route.categoryId !== categoryId);
   if (value) draftSettings.value.categoryRoutes.push({ categoryId, station: value });
 }
-async function toggleSound() { if (sound.enabled && sound.unlocked) sound.disable(); else await sound.enable(); }
+async function toggleSound() {
+  if (!mobileAudio.value) { openSettings(); return; }
+  if (legacySound.enabled && legacySound.unlocked) legacySound.disable(); else await legacySound.enable();
+}
 async function logout() {
   if (busy.value) return;
   busy.value = true;
@@ -360,13 +372,14 @@ async function fullscreen() {
 }
 function badgeCount(cardTasks: KdsTask[], orderType: KdsOrderType) { return cardTasks.filter(task => task.order.orderType === orderType && canMakeKitchenTask(task)).reduce((sum, task) => sum + pendingQuantity(task), 0); }
 watch([station, type, search], () => { page.value = 0; quantities.value = {}; selected.value = ''; selectedOrderId.value = ''; selectedKitchenKey.value = ''; selectedServingKey.value = ''; });
+watch(mobileAudio, mobile => { if (mobile) sound.resetMerchant(); });
 watch(pageCount, value => { page.value = Math.min(page.value, value - 1); });
 watch(servingEnabled, enabled => { if (!enabled && mode.value === 'serving') changeMode('orderBump'); });
 onMounted(async () => {
   await refresh();
   poll = setInterval(() => { now.value = Date.now(); kitchenNow.value = kitchenClock.now(); void refresh(); }, 5000);
 });
-onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(noticeTimer); sound.resetMerchant(`kds:${auth.merchant?.id ?? 'demo'}`); });
+onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(noticeTimer); sound.resetMerchant(auth.merchant?.id ?? 'demo'); legacySound.resetMerchant(`kds:${auth.merchant?.id ?? 'demo'}`); });
 </script>
 
 <template>
@@ -379,7 +392,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
       <label class="kds-search"><Search :size="20" /><input v-model="search" :placeholder="t('search')" /></label>
       <div class="kds-tools">
         <button :title="t('refresh')" :aria-label="t('refresh')" :disabled="busy" @click="refresh"><RefreshCw :size="22" /></button>
-        <button :title="t('sound')" :aria-label="t('sound')" @click="toggleSound"><component :is="sound.enabled && sound.unlocked ? Volume2 : VolumeX" :size="22" /></button>
+        <button :title="t('sound')" :aria-label="t('sound')" :disabled="busy" @click="toggleSound"><component :is="(mobileAudio ? legacySound.enabled && legacySound.unlocked : sound.enabled && sound.unlocked) ? Volume2 : VolumeX" :size="22" /></button>
         <button :title="t('settings')" :aria-label="t('settings')" :disabled="busy" @click="openSettings"><Settings :size="22" /></button>
         <button :title="t('fullscreen')" :aria-label="t('fullscreen')" @click="fullscreen"><Maximize :size="22" /></button>
         <button v-if="isKdsTerminal" :title="t('logout')" :aria-label="t('logout')" :disabled="busy" @click="logout"><LogOut :size="22" /></button>
@@ -565,6 +578,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           </label>
           <small>{{ t('languageHint') }}</small>
         </div>
+        <SoundPreferences v-if="!mobileAudio" terminal="kds" />
         <div v-if="canConfigure && draftSettings" class="kds-settings-fields">
           <label class="kds-checkbox"><input v-model="draftSettings.enabled" type="checkbox" />{{ t('enabled') }}</label>
           <label class="kds-checkbox"><input v-model="draftSettings.servingEnabled" type="checkbox" />{{ t('servingEnabled') }}</label>

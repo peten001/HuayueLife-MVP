@@ -233,3 +233,11 @@
 .kds-serving-card footer { margin-top: 6px; }
 .kds-serving-count { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 .kds-serving-count b { color: var(--cashier-green); font-size: 13px; }
+
+/* Device sound preferences share the existing settings panel; merchant settings save separately. */
+.kds-settings-scroll > .sound-preferences { margin-top: 18px; }
+.kds .sound-preferences__heading { background: var(--cashier-transparent); }
+.kds .sound-preferences__switch { width: 56px; height: 44px; min-width: 56px; min-height: 44px; }
+.kds .sound-preferences__button { min-height: 44px; }
+.kds .sound-preferences__error { color: var(--cashier-action-danger); }
+.kds .sound-preferences__status.is-ready { color: var(--cashier-action-primary); }
