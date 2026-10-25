@@ -2680,6 +2680,8 @@ export class MerchantOrdersService {
       orderNo: string;
       createdAt: Date;
       readyAt: Date | null;
+      deliveryLatitude?: Prisma.Decimal | string | number | null;
+      deliveryLongitude?: Prisma.Decimal | string | number | null;
       totalAmountVnd?: bigint | number;
       itemAmountVnd?: bigint | number;
       deliveryFeeVnd?: bigint | number;
@@ -2707,6 +2709,14 @@ export class MerchantOrdersService {
   >(order: T) {
     const localizedOrder = {
       ...order,
+      // Normalize before the generic response walker expands Prisma Decimal
+      // into its internal { s, e, d } fields. Do not alter stored coordinates.
+      ...(order.deliveryLatitude !== undefined ? {
+        deliveryLatitude: order.deliveryLatitude?.toString() ?? null,
+      } : {}),
+      ...(order.deliveryLongitude !== undefined ? {
+        deliveryLongitude: order.deliveryLongitude?.toString() ?? null,
+      } : {}),
       ...(order.items ? {
         items: order.items.map((item) => {
           if (!Object.prototype.hasOwnProperty.call(item, 'product')) return item;
