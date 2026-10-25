@@ -1,3 +1,5 @@
+import { usesGcj02Offset } from './coordinates';
+
 export interface DeliveryCoordinate {
   latitude: number;
   longitude: number;
@@ -36,9 +38,17 @@ export function deliveryCoordinateFromAddress(address: string): DeliveryCoordina
   return match ? normalizeDeliveryCoordinate(match[1], match[2]) : null;
 }
 
-/** Search only the explicitly recorded WGS84 point; never send address text. */
-export function googleMapsDeliverySearchUrl(address: string | null | undefined): string {
-  const coordinate = deliveryCoordinateFromAddress(address || '');
+/** Older orders have coordinate columns without a WGS84 marker in their address.
+ * Outside the offset region GCJ02 and WGS84 use the same point. Mainland legacy
+ * columns need a known coordinate system; do not guess or convert them twice.
+ */
+export function googleMapsDeliverySearchUrl(
+  address: string | null | undefined,
+  orderCoordinate?: { latitude: unknown; longitude: unknown } | null,
+): string {
+  const recorded = deliveryCoordinateFromAddress(address || '');
+  const legacy = normalizeDeliveryCoordinate(orderCoordinate?.latitude, orderCoordinate?.longitude);
+  const coordinate = recorded ?? (legacy && !usesGcj02Offset(legacy.latitude, legacy.longitude) ? legacy : null);
   if (!coordinate) return '';
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatDeliveryCoordinate(coordinate))}`;
 }

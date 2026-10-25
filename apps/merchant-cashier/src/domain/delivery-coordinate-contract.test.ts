@@ -71,6 +71,29 @@ describe('Tencent delivery point to Google Maps contract', () => {
     expect(googleMapsDeliverySearchUrl(null)).toBe('');
   });
 
+  it.each([[21.281, 106.197], [21.1861, 106.0763], [21.0285, 105.8542]])(
+    'searches independently stored overseas order coordinates without a GPS suffix (%s, %s)', (latitude, longitude) => {
+      const url = new URL(googleMapsDeliverySearchUrl('园区入口', { latitude: String(latitude), longitude: String(longitude) }));
+      expect([...url.searchParams]).toEqual([['api', '1'], ['query', `${latitude.toFixed(7)}, ${longitude.toFixed(7)}`]]);
+    },
+  );
+
+  it('prefers the explicit WGS84 suffix when coordinate columns disagree', () => {
+    const url = new URL(googleMapsDeliverySearchUrl('园区\nGPS: 39.9088230, 116.3974700', { latitude: 39.9102265, longitude: 116.4037136 }));
+    expect(url.searchParams.get('query')).toBe('39.9088230, 116.3974700');
+  });
+
+  it('does not guess the coordinate system of unmarked historical mainland order fields', () => {
+    expect(googleMapsDeliverySearchUrl('园区', { latitude: 39.9102265, longitude: 116.4037136 })).toBe('');
+    expect(googleMapsDeliverySearchUrl('园区', { latitude: 39.908823, longitude: 116.39747 })).toBe('');
+  });
+
+  it.each([[null, null], ['', ''], [0, 0], [91, 106], [21, -181], [NaN, 106]])(
+    'does not fabricate a search from invalid coordinate columns (%s, %s)', (latitude, longitude) => {
+      expect(googleMapsDeliverySearchUrl('北门', { latitude, longitude })).toBe('');
+    },
+  );
+
   it('keeps multilingual multiline address text separate from coordinate-only search', () => {
     const address = '北门 12 号\r\nCổng bắc, tòa nhà 3\r\nGPS: 21.2810000, 106.1970000';
     expect(stripDeliveryGpsSuffix(address)).toBe('北门 12 号\r\nCổng bắc, tòa nhà 3');

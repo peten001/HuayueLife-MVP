@@ -194,7 +194,6 @@ async function chooseLocation() {
       ?? normalizeDeliveryCoordinate(merchantDetail.value?.latitude, merchantDetail.value?.longitude)
       ?? { latitude: 21.281, longitude: 106.197 };
     const selected = await chooseDeliveryLocation({
-      address: form.deliveryAddress,
       coordinate: deliveryCoordinate.value,
       fallbackCoordinate,
     });
@@ -203,8 +202,8 @@ async function chooseLocation() {
     if (!coordinate || selected.coordinateSystem !== 'WGS84') throw new Error(deliveryLocationText(locale.value, 'readFailed'));
     form.deliveryLatitude = coordinate.latitude;
     form.deliveryLongitude = coordinate.longitude;
-    form.deliveryAddress = stripDeliveryGpsSuffix(selected.address) || getFallbackRegionText();
-    locationLabel.value = deliveryLocationText(locale.value, 'selected');
+    form.deliveryAddress = stripDeliveryGpsSuffix(selected.address);
+    locationLabel.value = deliveryLocationText(locale.value, form.deliveryAddress ? 'selected' : 'selectedWithoutAddress');
     saveContactInfo();
     schedulePreview();
   } catch {
@@ -406,19 +405,6 @@ function requiresContactPhone() {
 }
 
 
-function getFallbackRegionText() {
-  const currentCityLabel =
-    locationStore.city === 'Bac Ninh'
-      ? t('cityBacNinh')
-      : locationStore.city === 'Bac Giang'
-        ? t('cityBacGiang')
-        : '';
-  const merchantProvince = stringField(merchantDetail.value?.province);
-  const merchantDistrict = stringField(merchantDetail.value?.district);
-  const parts = [currentCityLabel, merchantProvince, merchantDistrict].filter(Boolean);
-  return parts.join(' ');
-}
-
 function canPreviewDelivery() {
   if (context.value?.orderType !== 'DELIVERY') return true;
   const deliveryAddress = form.deliveryAddress.trim();
@@ -570,10 +556,6 @@ function shouldComparePreview(
   return true;
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function serializeError(error: unknown) {
   try {
     return JSON.stringify(error, Object.getOwnPropertyNames(error as object));
@@ -682,18 +664,21 @@ function goHome() {
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form delivery-card">
-      <view class="section-heading">
-        <text class="section-title">{{ t('deliveryAddress') }}</text>
-        <button class="location" :disabled="selectingLocation" @click="chooseLocation()">
-          <image
-            class="location-icon"
-            src="/static/merchant-detail-icons/map-pin-green.png"
-            mode="aspectFit"
-          />
-          <text class="location-label">
-            {{ checkoutText('地图选位置', 'Chọn trên bản đồ', 'Choose on map') }}
-          </text>
-        </button>
+      <view class="location-entry">
+        <view class="section-heading">
+          <text class="section-title">{{ t('deliveryAddress') }}</text>
+          <button class="location" :disabled="selectingLocation" @click="chooseLocation()">
+            <image
+              class="location-icon"
+              src="/static/merchant-detail-icons/map-pin-green.png"
+              mode="aspectFit"
+            />
+            <text class="location-label">
+              {{ checkoutText('地图选位置', 'Chọn trên bản đồ', 'Choose on map') }}
+            </text>
+          </button>
+        </view>
+        <text class="location-guidance">{{ deliveryLocationText(locale, 'selectionHint') }}</text>
       </view>
       <view class="delivery-address-field">
         <textarea
@@ -961,6 +946,20 @@ textarea:focus {
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
+}
+
+.location-entry {
+  display: grid;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.location-guidance {
+  display: block;
+  color: #666666;
+  font-size: 24rpx;
+  font-size: max(24rpx, 12px);
+  line-height: 1.5;
 }
 
 .section-title {

@@ -276,6 +276,8 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.get('[data-testid="copy-delivery-address"]').classes()).toContain('is-copied');
     expect(wrapper.get('[data-testid="copy-delivery-address"]').attributes('aria-label')).toBe('已复制');
     expect(wrapper.find('[data-testid="search-delivery-address"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="delivery-navigation-unavailable"]').text()).toContain('Google 导航');
+    expect(wrapper.get('[data-testid="delivery-navigation-unavailable"]').text()).toContain('暂无可用定位');
     expect(wrapper.text()).toContain('12 Test Street, District 1');
     expect(wrapper.get('[data-testid="call-delivery-phone"]').text()).toContain('拨打电话');
     expect(wrapper.find('.delivery-contact-panel__phone').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'SPAN', 'A']);
@@ -302,6 +304,35 @@ describe('cashier fulfilment V2 components', () => {
     await wrapper.get('[data-testid="copy-delivery-address"]').trigger('click');
     await flushPromises();
     expect(writeText).toHaveBeenCalledWith('园区北门 12 号\nCổng bắc, tòa nhà 3');
+    wrapper.unmount();
+  });
+
+  it.each([false, true])('restores Google search from order fields without GPS text (compact: %s)', async (compact) => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const wrapper = mount(DeliveryContactPanel, {
+      props: { order: { ...order, orderType: 'DELIVERY', deliveryAddress: '园区北门', deliveryLatitude: '21.2810000', deliveryLongitude: '106.1970000' }, compact },
+      global: { plugins: [createPinia()] },
+    });
+    const link = wrapper.get('[data-testid="search-delivery-address"]');
+    expect(new URL(link.attributes('href') || '').searchParams.get('query')).toBe('21.2810000, 106.1970000');
+    expect(link.text()).toContain('Google 导航');
+    expect(wrapper.find('[data-testid="delivery-navigation-unavailable"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="copy-delivery-address"]').trigger('click'); await flushPromises();
+    expect(writeText).toHaveBeenCalledWith('园区北门');
+    await wrapper.setProps({ order: { ...order, orderType: 'DELIVERY', deliveryAddress: '另一个门', deliveryLatitude: '21.2820000', deliveryLongitude: '106.1980000' } });
+    expect(new URL(wrapper.get('[data-testid="search-delivery-address"]').attributes('href') || '').searchParams.get('query')).toBe('21.2820000, 106.1980000');
+    wrapper.unmount();
+  });
+
+  it('uses order coordinates even when there is no address text to copy', () => {
+    const wrapper = mount(DeliveryContactPanel, {
+      props: { order: { ...order, orderType: 'DELIVERY', deliveryAddress: '', deliveryLatitude: '21.2810000', deliveryLongitude: '106.1970000' } },
+      global: { plugins: [createPinia()] },
+    });
+    expect(new URL(wrapper.get('[data-testid="search-delivery-address"]').attributes('href') || '').searchParams.get('query')).toBe('21.2810000, 106.1970000');
+    expect(wrapper.find('[data-testid="copy-delivery-address"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('未填写配送地址');
     wrapper.unmount();
   });
 

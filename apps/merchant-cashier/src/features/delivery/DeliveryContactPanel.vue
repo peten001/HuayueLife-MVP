@@ -17,7 +17,10 @@ const { t } = useI18n();
 const uiStore = useUiStore();
 const deliveryAddress = computed(() => props.order.deliveryAddress?.trim() || '');
 const deliveryAddressText = computed(() => stripDeliveryGpsSuffix(deliveryAddress.value));
-const addressSearchUrl = computed(() => googleMapsDeliverySearchUrl(deliveryAddress.value));
+const addressSearchUrl = computed(() => googleMapsDeliverySearchUrl(deliveryAddress.value, {
+  latitude: props.order.deliveryLatitude,
+  longitude: props.order.deliveryLongitude,
+}));
 const addressCopied = ref(false);
 let copiedResetTimer: ReturnType<typeof setTimeout> | undefined;
 const isDialSupported = computed(() => {
@@ -65,13 +68,16 @@ onBeforeUnmount(() => {
             data-testid="search-delivery-address"
           >
             <Home :size="17" aria-hidden="true" />
-            <strong>{{ deliveryAddress }}</strong>
+            <strong>{{ deliveryAddress || t('order.deliveryAddressMissing') }}</strong>
             <span class="delivery-contact-panel__navigation-hint"><Search :size="14" aria-hidden="true" />{{ t('fulfillment.searchGoogleMaps') }}</span>
           </a>
-          <template v-else>
+          <div v-else class="delivery-contact-panel__location">
             <Home :size="17" aria-hidden="true" />
             <strong>{{ deliveryAddress || t('order.deliveryAddressMissing') }}</strong>
-          </template>
+            <span class="delivery-contact-panel__navigation-hint delivery-contact-panel__navigation-unavailable" data-testid="delivery-navigation-unavailable">
+              <Search :size="14" aria-hidden="true" />{{ t('fulfillment.searchGoogleMaps') }} · {{ t('fulfillment.navigationUnavailable') }}
+            </span>
+          </div>
           <button
             v-if="deliveryAddressText"
             type="button"
