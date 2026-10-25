@@ -39,10 +39,17 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     configuredUsbPrinters.value.filter((printer) => printer.enabled),
   );
   const readyUsbPrinters = computed(() =>
-    enabledUsbPrinters.value.filter(isReadyUsbPrinter),
+    enabledUsbPrinters.value.filter(isReadyPrinter),
   );
 
-  const availability = computed<CashierPrintingAvailability>(() => {
+  const availability = computed(() =>
+    resolveAvailability(readyUsbPrinters.value.length > 0),
+  );
+  const deviceAvailability = computed(() =>
+    resolveAvailability(enabledPrinters.value.some(isReadyPrinter)),
+  );
+
+  function resolveAvailability(hasReadyPrinter: boolean): CashierPrintingAvailability {
     const auth = useAuthStore();
     if (auth.demoMode) return 'NOT_ENABLED';
     if (loading.value && !featureState.value) return 'LOADING';
@@ -61,10 +68,10 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       || !isExistingPrintingRole(auth.role)
       || !featureState.value.taskCenterEnabled
       || !featureState.value.executionEnabled
-      || !readyUsbPrinters.value.length
+      || !hasReadyPrinter
     ) return 'DEVICE_OFFLINE';
     return 'READY';
-  });
+  }
 
   const ready = computed(() => availability.value === 'READY');
 
@@ -203,6 +210,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     enabledUsbPrinters,
     readyUsbPrinters,
     availability,
+    deviceAvailability,
     ready,
     loading,
     submitting,
@@ -238,7 +246,7 @@ function isConfiguredUsbPrinter(printer: CashierPrintingPrinter) {
   );
 }
 
-function isReadyUsbPrinter(printer: CashierPrintingPrinter) {
+function isReadyPrinter(printer: CashierPrintingPrinter) {
   return printer.status === 'ONLINE'
     && printer.readiness?.state === 'READY'
     && printer.readiness.channelImplemented === true

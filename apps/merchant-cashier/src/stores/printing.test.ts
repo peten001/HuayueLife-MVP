@@ -84,11 +84,13 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('READY');
+    expect(store.deviceAvailability).toBe('READY');
     expect(store.ready).toBe(true);
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([]);
     await store.refreshStatus();
     expect(store.availability).toBe('NOT_CONFIGURED');
+    expect(store.deviceAvailability).toBe('NOT_CONFIGURED');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       { ...usbPrinter, status: 'OFFLINE' },
@@ -102,6 +104,57 @@ describe('cashier printing gate', () => {
     });
     await store.refreshStatus();
     expect(store.availability).toBe('NOT_ENABLED');
+    expect(store.deviceAvailability).toBe('NOT_ENABLED');
+  });
+
+  it.each(['LOCAL_LAN_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'])(
+    'shows devices online for %s while USB is offline',
+    async (channelType) => {
+      apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
+        { ...usbPrinter, status: 'OFFLINE' },
+        {
+          ...usbPrinter,
+          id: 'printer-2',
+          channelType,
+          connectionConfig: channelType === 'LOCAL_LAN_ESCPOS'
+            ? { host: '192.168.1.229', port: 9100 }
+            : channelType === 'CLOUD_FEIE'
+              ? { printerSn: 'test-printer' }
+              : { machineCode: 'test-printer' },
+        },
+      ]);
+      const store = usePrintingStore();
+      await store.refreshStatus();
+
+      expect(store.deviceAvailability).toBe('READY');
+      expect(store.availability).toBe('DEVICE_OFFLINE');
+      expect(store.ready).toBe(false);
+      expect(store.readyUsbPrinters).toEqual([]);
+    },
+  );
+
+  it('updates device availability when the only online network printer disconnects or is disabled', async () => {
+    const networkPrinter = {
+      ...usbPrinter,
+      channelType: 'LOCAL_LAN_ESCPOS',
+      connectionConfig: { host: '192.168.1.229', port: 9100 },
+    };
+    const store = usePrintingStore();
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([networkPrinter]);
+    await store.refreshStatus();
+    expect(store.deviceAvailability).toBe('READY');
+
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
+      { ...networkPrinter, status: 'OFFLINE' },
+    ]);
+    await store.refreshStatus();
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
+
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
+      { ...networkPrinter, enabled: false },
+    ]);
+    await store.refreshStatus();
+    expect(store.deviceAvailability).toBe('NOT_CONFIGURED');
   });
 
   it.each(['UNKNOWN', 'UNVERIFIED', 'OFFLINE', 'ERROR', 'DISABLED'] as const)(
@@ -113,6 +166,7 @@ describe('cashier printing gate', () => {
       const store = usePrintingStore();
       await store.refreshStatus();
       expect(store.availability).toBe('DEVICE_OFFLINE');
+      expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
       expect(store.readyUsbPrinters).toEqual([]);
     },
   );
@@ -124,6 +178,7 @@ describe('cashier printing gate', () => {
     ]);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       {
@@ -133,6 +188,7 @@ describe('cashier printing gate', () => {
     ]);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('treats a disabled printer as not configured for execution', async () => {
@@ -158,6 +214,7 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('accepts the empty USB default config and rejects invalid USB configuration', async () => {
@@ -204,12 +261,14 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
 
     const auth = useAuthStore();
     auth.$patch({ accessToken: '', session: null });
     apiMocks.getCashierPrintingFeatureState.mockResolvedValueOnce(enabledFeature);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('does not keep showing READY after a status refresh fails', async () => {
@@ -220,6 +279,7 @@ describe('cashier printing gate', () => {
     apiMocks.getCashierPrintingFeatureState.mockRejectedValueOnce(new Error('status unavailable'));
     await expect(store.refreshStatus()).rejects.toThrow('status unavailable');
     expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
     expect(store.ready).toBe(false);
   });
 
@@ -230,6 +290,7 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await expect(store.refreshStatus()).rejects.toThrow('status unavailable');
     expect(store.availability).toBe('NOT_ENABLED');
+    expect(store.deviceAvailability).toBe('NOT_ENABLED');
     expect(store.ready).toBe(false);
   });
 
