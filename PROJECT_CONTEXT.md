@@ -1,5 +1,7 @@
 # 华越优选 HuayueLife-MVP
 
+2026-10-25 配送导航修复和服务器清理已完成：源码已同步 GitHub main，收银 11d2857／delivery-navigation-compat-20261025-v1、API b387772／delivery-coordinate-response-20261025-v1 均上线。独立坐标兼容加上 API Decimal 转字符串后，同一现有订单手机／电脑均恢复 Google 导航，query 仅经纬度；799 收银／1367 API 测试、全仓类型／构建及线上校验通过。API 只覆盖 3 编译文件、原 Linux 依赖逐文件保持，无迁移；一次重启后 PID 3728033、restart=19、online。数据库备份 68,895,938 bytes、旧运行包 89,184,015 bytes，校验通过。用户进一步授权清理服务器：6.55 GB 旧日志完整校验归档为 815,091,955 bytes，2,184 张无引用图片 483,207,310 bytes 已备份本机后清理；6,381 张保留图片哈希及 12 个线上样本通过，清理后无剩余无引用候选，最终可用约 6.38 GB。清理扫描 42 张表／209 个文本与 JSON 字段及现行代码，保留隐式缩略图／48 小时内新上传，不写数据库；图片备份在 /Users/peter/Desktop/YunQiao-server-backups-20261025，服务器凭证在 /opt/backups/yunqiao-server-cleanup-20261025-v1。小程序 canonical 与微信私有配置保留，由用户手动上传。详见 docs/release/delivery-navigation-compat-20261025-v1.md 和 docs/release/server-storage-cleanup-20261025-v1.md。
+
 2026-10-25 收银静态导航兼容已推送并上线，但完整订单验收发现 API 二次序列化把独立坐标 Decimal 展开为内部对象，故继续完成必要补发：商家订单返回经纬度统一转十进制字符串，原值、地址、坐标制式与空值不改；真实成功响应两项回归修复前失败、修复后通过，1367 项 API 及全仓类型／构建通过。API 候选 delivery-coordinate-response-20261025-v1 仅覆盖 merchant-orders.service 的 3 个编译文件，独立备份数据库和完整 Linux 运行包、隔离启动后切换原进程；不运行迁移、不写生产业务数据。收银已通过服务器／外网 68 文件校验，代码 11d2857，保留 725 旧资源。最终联合验收和发布结果见 docs/release/delivery-navigation-compat-20261025-v1.md。
 
 2026-10-25 配送定位修复获用户明确授权提交、推送和上线：候选 delivery-navigation-compat-20261025-v1，源码同时包含前轮原生选址和轻提示，服务器仅部署收银 Google 坐标兼容。小程序仍由用户手动上传；先完整备份旧静态目录并校验，再切换指针，服务器／外网逐文件验证，失败仅回退收银静态指针。API／数据库／KDS／后台及配置保持，无生产业务测试。实际成功结果见 docs/release/delivery-navigation-compat-20261025-v1.md。

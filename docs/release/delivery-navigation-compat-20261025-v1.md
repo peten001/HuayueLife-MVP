@@ -3,7 +3,7 @@
 - 日期：2026-10-25（越南时间）。
 - 版本：`delivery-navigation-compat-20261025-v1`。
 - 用户授权：提交、推送、上线；小程序继续由用户手动上传。
-- 状态：收银静态页已发布并通过逐文件校验；线上订单验收发现 Decimal 响应问题，API 补发待核验。
+- 状态：源码已同步 GitHub main，收银与必要的 API 修复均已上线；手机／电脑现有订单只读验收通过。
 
 ## 交付范围
 
@@ -27,4 +27,14 @@
 
 最终现有订单只读验收发现第二层原因：API 成功响应通用遍历把 Prisma Decimal 变成 `{s,e,d}` 内部对象，独立坐标因此不符合前端字符串／数值约定。已在商家订单共享序列化中仅对经纬度转十进制字符串，不改数据库内容、地址正文或坐标制式；列表、详情及复用该序列化的返回保持一致，空值仍为 null。新增的真实成功响应回归在修复前两项失败，修复后通过；完整 API 1367 项及全仓类型／构建通过。
 
-API 补发版本 `delivery-coordinate-response-20261025-v1`，只覆盖 `merchant-orders.service` 的 JS／map／声明 3 个编译文件。先备份数据库及当前完整 Linux 运行包，原依赖和 Prisma schema 保持，候选隔离启动通过后再切换 API 与依赖指针并重启原进程。该步骤独立于收银静态发布脚本，不运行迁移或生产业务测试。实际成功状态待补录。
+API 补发版本 `delivery-coordinate-response-20261025-v1`，只覆盖 `merchant-orders.service` 的 JS／map／声明 3 个编译文件。先备份数据库及当前完整 Linux 运行包，原依赖和 Prisma schema 保持，候选隔离启动通过后再切换 API 与依赖指针并重启原进程。该步骤独立于收银静态发布脚本，不运行迁移或生产业务测试。
+
+## 最终联合验收
+
+API 代码 [b387772](https://github.com/peten001/HuayueLife-MVP/commit/b38777223a7269200e4e32ebbfc782a4714bb59b) 已推送，源码树 `45a5336ab3acfe9a2fbdf173003b23b22521fd3a`。当前 API 编译指针为 `/opt/huayue-api-releases/delivery-coordinate-response-20261025-v1/runtime/apps/api/dist`；依赖从原 Linux 运行包复制并逐文件核对，没有安装或升级依赖。隔离启动健康／鉴权通过后，原 API 一次重启，PID `3728033`、重启计数 `19`、online、unstable=0。服务器及本机外网健康 200，未认证订单／预约／KDS 401。
+
+现有配送订单在发布 API 前仍显示“暂无可用定位”，API 发布后已在同一订单确认电脑和 390px 手机出现可点击“Google 导航”；DOM 核对 query 只有经纬度，手机无横向溢出，浏览器无脚本错误。没有点击顾客坐标跳到第三方地图，没有生产订单、聊天、打印或收款测试。复制地址仍由真实组件回归覆盖。线上截图仅保存在本机私有备份目录，不推送业务截图。
+
+API 备份 `/opt/backups/yunqiao-delivery-coordinate-response-20261025-v1/api`：数据库 68,895,938 bytes，解压 858,166,734 bytes，gzip 完整性通过，SHA-256 `d5635606280b950f016b24291f0f8fa891d13d1a851fd88c1e26a0d007c12b7d`；旧完整 Linux 运行包 89,184,015 bytes，逐文件验证通过，SHA-256 `eda9d409f6fefecdcd354f4b6987ef9188407c7262f07a3dcd15dd425743bda9`。API 配置、schema、数据库迁移记录、服务开关、收银／KDS／后台文件和上传文件在 API 切换时核对一致。`SHADOW_PASS.json`、`DEPLOYMENT_PASS.json`、`PUBLIC_PASS.json`、`BROWSER_PASS.json` 均 PASS。仅需回退 API 时，执行该目录 `deploy-api.py rollback`，先检查当前指针，再恢复原 API／依赖并重启，不恢复数据库或删除新业务数据。
+
+发布准备时发现服务器不足 1 GB 可用空间，随后用户明确要求清理服务器及不需要的原图。已独立完成可恢复的日志归档及无引用图片清理，发生在 API 切换验证之后，详见 [服务器空间清理](server-storage-cleanup-20261025-v1.md)。该维护按用户授权删除的图片不属于 API 发布的文件保护范围。小程序源码已同步；canonical 包及本机微信私有配置保留，仍由用户手动上传。
