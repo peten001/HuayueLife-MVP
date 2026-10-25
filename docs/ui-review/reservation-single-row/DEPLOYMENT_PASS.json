@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "release": "reservation-single-row-20261025-v1",
+  "sourceCommit": "c9475e78fa52838688c3c055e5d499ffb1ad7e15",
+  "sourceTree": "afc8105037fe96d48a74235db354c571d3580385",
+  "previous": "/var/www/huayue-cashier-releases/cashier-print-entry-20261025-v2",
+  "current": "/var/www/huayue-cashier-releases/reservation-single-row-20261025-v1",
+  "backup": "/opt/backups/yunqiao-reservation-single-row-20261025-v1",
+  "backupArchive": {
+    "bytes": 7761335,
+    "sha256": "8346ff5bf7cc026365d0c77745136833f779980127716dfa374ab9b061842123",
+    "files": 866,
+    "verified": true
+  },
+  "oldAssetsRetained": 835,
+  "verifiedFiles": 68,
+  "api": [
+    {
+      "name": "huayue-api",
+      "pid": 3728033,
+      "status": "online",
+      "restarts": 19,
+      "unstable": 0,
+      "cwd": "/opt/HuayueLife-MVP/apps/api",
+      "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+    }
+  ],
+  "protectedStateUnchanged": true,
+  "migrations": false,
+  "apiRestarted": false,
+  "scope": "cashier-only"
+}

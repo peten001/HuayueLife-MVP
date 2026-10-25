@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "release": "reservation-single-row-20261025-v1",
+  "scope": "public login entry and resource load",
+  "cases": [
+    {
+      "width": 390,
+      "height": 844,
+      "viewport": 390,
+      "scroll": 390,
+      "pageErrors": [],
+      "failedCashierResources": [],
+      "loginVisible": true
+    },
+    {
+      "width": 900,
+      "height": 900,
+      "viewport": 900,
+      "scroll": 900,
+      "pageErrors": [],
+      "failedCashierResources": [],
+      "loginVisible": true
+    },
+    {
+      "width": 1366,
+      "height": 900,
+      "viewport": 1366,
+      "scroll": 1366,
+      "pageErrors": [],
+      "failedCashierResources": [],
+      "loginVisible": true
+    }
+  ],
+  "productionBusinessWrites": false
+}
