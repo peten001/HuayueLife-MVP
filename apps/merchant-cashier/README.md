@@ -99,7 +99,7 @@ VITE_API_BASE_URL=http://localhost:3001/api/v1 \
 - `GET /merchant/table-sessions/:id`、`POST /merchant/table-sessions/:id/close`
 - `GET /merchant/orders`、`GET /merchant/orders/:id`
 - 现有订单 `accept`、`reject`、`start-preparing`、`ready`、`start-delivery`、`complete` 动作
-- 打印任务中心状态、USB 打印机列表、订单/桌账人工 PrintJob 与带原因补打；网页只创建和查看任务，不能传 ESC/POS 字节或回报打印成功
+- 打印任务中心状态、可用 USB／局域网／云打印机列表、订单/桌账人工 PrintJob 与带原因补打；网页只创建和查看任务，不能传 ESC/POS 字节或回报打印成功
 
 真实桌台模型只有 `ACTIVE / DISABLED`，开放的 TableSession 统一显示为“用餐中”。“可关闭桌账”是 `unfinishedOrderCount === 0` 的操作条件，不是独立后端状态，因此收银台不提供虚构的“待结桌”筛选。
 
@@ -127,9 +127,10 @@ corepack pnpm --filter @huayue-life/merchant-cashier screenshots:real-api
 
 生产构建输出到 `apps/merchant-cashier/dist/`。根目录的递归 `typecheck` 和 `build` 也会自动包含本应用。
 
-## USB RC 打印安全 Gate
+## 打印可用规则
 
-- 页面默认显示打印关闭；只有任务中心、全局执行、商家打印总开关和已启用 `LOCAL_USB_ESCPOS` Printer 同时满足时才开放按钮。
+- 页面默认显示打印关闭；任务中心、全局执行、商家打印总开关、账号权限和任意已启用设备的服务端 `ONLINE`／readiness 证据同时满足时开放按钮。
+- 顶部图标、订单、电脑／手机桌账、历史打印和补打共用 `availability` 与 `readyPrinters`，支持 `LOCAL_USB_ESCPOS`、`LOCAL_LAN_ESCPOS`、`CLOUD_FEIE`、`CLOUD_YILIAN`；不再单独过滤 USB。
 - 初次人工打印由 API 生成不可变 ReceiptSnapshot；网页不生成原始打印字节。
 - 补打必须填写原因并生成新任务，不修改或重复执行原任务。
 - 网络异常时打印写操作与订单写操作一样被禁用。

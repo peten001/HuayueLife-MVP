@@ -84,13 +84,11 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('READY');
-    expect(store.deviceAvailability).toBe('READY');
     expect(store.ready).toBe(true);
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([]);
     await store.refreshStatus();
     expect(store.availability).toBe('NOT_CONFIGURED');
-    expect(store.deviceAvailability).toBe('NOT_CONFIGURED');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       { ...usbPrinter, status: 'OFFLINE' },
@@ -104,11 +102,10 @@ describe('cashier printing gate', () => {
     });
     await store.refreshStatus();
     expect(store.availability).toBe('NOT_ENABLED');
-    expect(store.deviceAvailability).toBe('NOT_ENABLED');
   });
 
   it.each(['LOCAL_LAN_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'])(
-    'shows devices online for %s while USB is offline',
+    'allows printing through %s while USB is offline',
     async (channelType) => {
       apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
         { ...usbPrinter, status: 'OFFLINE' },
@@ -126,14 +123,13 @@ describe('cashier printing gate', () => {
       const store = usePrintingStore();
       await store.refreshStatus();
 
-      expect(store.deviceAvailability).toBe('READY');
-      expect(store.availability).toBe('DEVICE_OFFLINE');
-      expect(store.ready).toBe(false);
-      expect(store.readyUsbPrinters).toEqual([]);
+      expect(store.availability).toBe('READY');
+      expect(store.ready).toBe(true);
+      expect(store.readyPrinters.map((printer) => printer.id)).toEqual(['printer-2']);
     },
   );
 
-  it('updates device availability when the only online network printer disconnects or is disabled', async () => {
+  it('updates availability when the only online network printer disconnects or is disabled', async () => {
     const networkPrinter = {
       ...usbPrinter,
       channelType: 'LOCAL_LAN_ESCPOS',
@@ -142,19 +138,19 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([networkPrinter]);
     await store.refreshStatus();
-    expect(store.deviceAvailability).toBe('READY');
+    expect(store.availability).toBe('READY');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       { ...networkPrinter, status: 'OFFLINE' },
     ]);
     await store.refreshStatus();
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
+    expect(store.availability).toBe('DEVICE_OFFLINE');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       { ...networkPrinter, enabled: false },
     ]);
     await store.refreshStatus();
-    expect(store.deviceAvailability).toBe('NOT_CONFIGURED');
+    expect(store.availability).toBe('NOT_CONFIGURED');
   });
 
   it.each(['UNKNOWN', 'UNVERIFIED', 'OFFLINE', 'ERROR', 'DISABLED'] as const)(
@@ -166,8 +162,7 @@ describe('cashier printing gate', () => {
       const store = usePrintingStore();
       await store.refreshStatus();
       expect(store.availability).toBe('DEVICE_OFFLINE');
-      expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
-      expect(store.readyUsbPrinters).toEqual([]);
+      expect(store.readyPrinters).toEqual([]);
     },
   );
 
@@ -178,7 +173,6 @@ describe('cashier printing gate', () => {
     ]);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
 
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       {
@@ -188,7 +182,6 @@ describe('cashier printing gate', () => {
     ]);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('treats a disabled printer as not configured for execution', async () => {
@@ -214,7 +207,6 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('accepts the empty USB default config and rejects invalid USB configuration', async () => {
@@ -261,14 +253,12 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
 
     const auth = useAuthStore();
     auth.$patch({ accessToken: '', session: null });
     apiMocks.getCashierPrintingFeatureState.mockResolvedValueOnce(enabledFeature);
     await store.refreshStatus();
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
   });
 
   it('does not keep showing READY after a status refresh fails', async () => {
@@ -279,7 +269,6 @@ describe('cashier printing gate', () => {
     apiMocks.getCashierPrintingFeatureState.mockRejectedValueOnce(new Error('status unavailable'));
     await expect(store.refreshStatus()).rejects.toThrow('status unavailable');
     expect(store.availability).toBe('DEVICE_OFFLINE');
-    expect(store.deviceAvailability).toBe('DEVICE_OFFLINE');
     expect(store.ready).toBe(false);
   });
 
@@ -290,7 +279,6 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await expect(store.refreshStatus()).rejects.toThrow('status unavailable');
     expect(store.availability).toBe('NOT_ENABLED');
-    expect(store.deviceAvailability).toBe('NOT_ENABLED');
     expect(store.ready).toBe(false);
   });
 
@@ -306,38 +294,48 @@ describe('cashier printing gate', () => {
     expect(apiMocks.createOrderPrintJob).not.toHaveBeenCalled();
   });
 
-  it('creates only controlled server jobs and requires a reason for reprint', async () => {
-    const job = {
-      id: 'job-1',
-      orderId: 'order-1',
-      printerId: 'printer-1',
-      receiptType: 'ORDER_CUSTOMER',
-      source: 'MANUAL_REPRINT',
-      status: 'PENDING',
-      attemptCount: 0,
-      maxAttempts: 3,
-      createdAt: '2026-07-15T00:00:00.000Z',
-    };
-    apiMocks.createOrderPrintJob.mockResolvedValue(job);
-    apiMocks.createPrintJobReprint.mockResolvedValue({ ...job, id: 'job-2' });
-    const store = usePrintingStore();
-    await store.refreshStatus();
+  it.each(['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'])(
+    'creates controlled order, table-bill and reprint jobs through %s', async (channelType) => {
+      const job = {
+        id: 'job-1',
+        orderId: 'order-1',
+        printerId: 'printer-1',
+        receiptType: 'ORDER_CUSTOMER',
+        source: 'MANUAL_REPRINT',
+        status: 'PENDING',
+        attemptCount: 0,
+        maxAttempts: 3,
+        createdAt: '2026-07-15T00:00:00.000Z',
+      };
+      apiMocks.createOrderPrintJob.mockResolvedValue(job);
+      apiMocks.createTableBillPrintJob.mockResolvedValue({ ...job, tableSessionId: 'session-1' });
+      apiMocks.createPrintJobReprint.mockResolvedValue({ ...job, id: 'job-2' });
+      apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([{ ...usbPrinter, channelType }]);
+      const store = usePrintingStore();
+      await store.refreshStatus();
 
-    await expect(store.printOrder('order-1', 'printer-1')).resolves.toEqual(job);
-    expect(apiMocks.createOrderPrintJob).toHaveBeenCalledWith(
-      'order-1',
-      'printer-1',
-      expect.stringMatching(/^cashier\./),
-    );
-    await expect(store.reprint('job-1', '   ')).rejects.toThrow('reason');
-    expect(apiMocks.createPrintJobReprint).not.toHaveBeenCalled();
-    await store.reprint('job-1', 'Damaged receipt', 'printer-1');
-    expect(apiMocks.createPrintJobReprint).toHaveBeenCalledWith('job-1', {
-      reason: 'Damaged receipt',
-      printerId: 'printer-1',
-      requestKey: expect.stringMatching(/^cashier\./),
-    });
-  });
+      await expect(store.printOrder('order-1', 'printer-1')).resolves.toEqual(job);
+      expect(apiMocks.createOrderPrintJob).toHaveBeenCalledWith(
+        'order-1',
+        'printer-1',
+        expect.stringMatching(/^cashier\./),
+      );
+      await store.printTableBill('session-1', 'printer-1');
+      expect(apiMocks.createTableBillPrintJob).toHaveBeenCalledWith(
+        'session-1',
+        'printer-1',
+        expect.stringMatching(/^cashier\./),
+      );
+      await expect(store.reprint('job-1', '   ')).rejects.toThrow('reason');
+      expect(apiMocks.createPrintJobReprint).not.toHaveBeenCalled();
+      await store.reprint('job-1', 'Damaged receipt', 'printer-1');
+      expect(apiMocks.createPrintJobReprint).toHaveBeenCalledWith('job-1', {
+        reason: 'Damaged receipt',
+        printerId: 'printer-1',
+        requestKey: expect.stringMatching(/^cashier\./),
+      });
+    },
+  );
 
   it('automatically reconciles an ambiguous response with the same request key', async () => {
     const job = {

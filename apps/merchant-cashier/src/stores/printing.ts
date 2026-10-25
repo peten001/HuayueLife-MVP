@@ -29,27 +29,14 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   const statusError = ref('');
   const lastRefreshAt = ref<string | null>(null);
 
-  const configuredUsbPrinters = computed(() =>
-    printers.value.filter(isConfiguredUsbPrinter),
-  );
   const enabledPrinters = computed(() =>
     printers.value.filter((printer) => printer.enabled),
   );
-  const enabledUsbPrinters = computed(() =>
-    configuredUsbPrinters.value.filter((printer) => printer.enabled),
-  );
-  const readyUsbPrinters = computed(() =>
-    enabledUsbPrinters.value.filter(isReadyPrinter),
+  const readyPrinters = computed(() =>
+    enabledPrinters.value.filter(isReadyPrinter),
   );
 
-  const availability = computed(() =>
-    resolveAvailability(readyUsbPrinters.value.length > 0),
-  );
-  const deviceAvailability = computed(() =>
-    resolveAvailability(enabledPrinters.value.some(isReadyPrinter)),
-  );
-
-  function resolveAvailability(hasReadyPrinter: boolean): CashierPrintingAvailability {
+  const availability = computed<CashierPrintingAvailability>(() => {
     const auth = useAuthStore();
     if (auth.demoMode) return 'NOT_ENABLED';
     if (loading.value && !featureState.value) return 'LOADING';
@@ -68,10 +55,10 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       || !isExistingPrintingRole(auth.role)
       || !featureState.value.taskCenterEnabled
       || !featureState.value.executionEnabled
-      || !hasReadyPrinter
+      || !readyPrinters.value.length
     ) return 'DEVICE_OFFLINE';
     return 'READY';
-  }
+  });
 
   const ready = computed(() => availability.value === 'READY');
 
@@ -205,12 +192,9 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   return {
     featureState,
     printers,
-    configuredUsbPrinters,
     enabledPrinters,
-    enabledUsbPrinters,
-    readyUsbPrinters,
+    readyPrinters,
     availability,
-    deviceAvailability,
     ready,
     loading,
     submitting,
@@ -248,6 +232,7 @@ function isConfiguredUsbPrinter(printer: CashierPrintingPrinter) {
 
 function isReadyPrinter(printer: CashierPrintingPrinter) {
   return printer.status === 'ONLINE'
+    && (printer.channelType !== USB_CHANNEL || isConfiguredUsbPrinter(printer))
     && printer.readiness?.state === 'READY'
     && printer.readiness.channelImplemented === true
     && printer.readiness.configValid === true

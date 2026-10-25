@@ -34,7 +34,9 @@ const existingJob = {
   createdAt: '2026-07-16T08:00:00.000Z',
 } as const;
 
-function readyStores() {
+const printerChannels = ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'];
+
+function readyStores(channelType = 'LOCAL_USB_ESCPOS') {
   const auth = useAuthStore();
   auth.$patch({
     accessToken: 'non-sensitive-test-auth',
@@ -59,7 +61,7 @@ function readyStores() {
       merchantPrintingEnabled: true,
       executionState: 'READY_FOR_CONNECTOR',
     },
-    printers: [printer],
+    printers: [{ ...printer, channelType }],
   });
   return printing;
 }
@@ -74,10 +76,10 @@ describe('PrintJobActions compact action', () => {
     vi.useRealTimers();
   });
 
-  it('uses the existing order PrintJob flow without rendering the standalone card', async () => {
+  it.each(printerChannels)('prints an order through %s without rendering the standalone card', async (channelType) => {
     const pinia = createPinia();
     setActivePinia(pinia);
-    const printing = readyStores();
+    const printing = readyStores(channelType);
     vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
     const printOrder = vi.spyOn(printing, 'printOrder').mockResolvedValue({
       id: 'job-1',
@@ -105,10 +107,10 @@ describe('PrintJobActions compact action', () => {
     wrapper.unmount();
   });
 
-  it('prioritizes one TABLE_BILL request, keeps the compact print label, and blocks a rapid second click', async () => {
+  it.each(printerChannels)('prints one TABLE_BILL through %s and blocks a rapid second click', async (channelType) => {
     const pinia = createPinia();
     setActivePinia(pinia);
-    const printing = readyStores();
+    const printing = readyStores(channelType);
     const listEntityJobs = vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
     let resolveJob!: (job: CashierPrintJob) => void;
     const printTableBill = vi.spyOn(printing, 'printTableBill').mockImplementation(
@@ -388,10 +390,10 @@ describe('PrintJobActions compact action', () => {
     wrapper.unmount();
   });
 
-  it('reprints silently after the required dangerous-action reason is confirmed', async () => {
+  it.each(printerChannels)('reprints through %s after the required reason is confirmed', async (channelType) => {
     const pinia = createPinia();
     setActivePinia(pinia);
-    const printing = readyStores();
+    const printing = readyStores(channelType);
     vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([existingJob]);
     const reprint = vi.spyOn(printing, 'reprint').mockResolvedValue({
       ...existingJob,
@@ -414,6 +416,71 @@ describe('PrintJobActions compact action', () => {
     expect(reprint).toHaveBeenCalledWith('job-1', '小票破损', 'printer-1');
     expect(wrapper.find('.print-job-actions__reason').exists()).toBe(false);
     expect(useUiStore().toasts).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('selects ready network and cloud printers and falls back when the selected printer disconnects', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores('LOCAL_LAN_ESCPOS');
+    const networkPrinter = { ...printer, id: 'network-1', name: 'Network', channelType: 'LOCAL_LAN_ESCPOS' };
+    const cloudPrinter = { ...printer, id: 'cloud-1', name: 'Cloud', channelType: 'CLOUD_FEIE' };
+    printing.$patch({ printers: [
+      { ...printer, status: 'OFFLINE' },
+      { ...printer, id: 'disabled-1', enabled: false },
+      networkPrinter,
+      cloudPrinter,
+    ] });
+    vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
+    const printOrder = vi.spyOn(printing, 'printOrder').mockResolvedValue({ ...existingJob, status: 'SUCCEEDED' });
+    const wrapper = mount(PrintJobActions, {
+      props: { orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    expect(wrapper.findAll('option').map(option => option.attributes('value'))).toEqual(['network-1', 'cloud-1']);
+    await wrapper.get('select').setValue('cloud-1');
+    await wrapper.get('[data-testid="print-primary"]').trigger('click');
+    expect(printOrder).toHaveBeenCalledWith('order-1', 'cloud-1');
+    await flushPromises();
+
+    printing.$patch({ printers: [networkPrinter, { ...cloudPrinter, status: 'OFFLINE' }] });
+    await flushPromises();
+    expect(wrapper.find('select').exists()).toBe(false);
+    await wrapper.get('[data-testid="print-primary"]').trigger('click');
+    expect(printOrder).toHaveBeenLastCalledWith('order-1', 'network-1');
+    await flushPromises();
+
+    printing.printers = [{ ...networkPrinter, status: 'OFFLINE' }];
+    await flushPromises();
+    expect(wrapper.get('[data-testid="print-primary"]').attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+  });
+
+  it('loads existing jobs immediately when a network printer comes online and prevents a duplicate print', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores('LOCAL_LAN_ESCPOS');
+    const networkPrinter = printing.printers[0]!;
+    printing.printers = [{ ...networkPrinter, status: 'OFFLINE' }];
+    const listEntityJobs = vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([
+      { ...existingJob, status: 'CLAIMED' },
+    ]);
+    const printOrder = vi.spyOn(printing, 'printOrder');
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+    expect(listEntityJobs).not.toHaveBeenCalled();
+
+    printing.printers = [networkPrinter];
+    await flushPromises();
+    expect(listEntityJobs).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="print-primary"]').attributes('data-print-state')).toBe('accepted');
+    await wrapper.get('[data-testid="print-primary"]').trigger('click');
+    expect(printOrder).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
