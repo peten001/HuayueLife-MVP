@@ -1,0 +1,1203 @@
+{
+  "pass": true,
+  "flows": [
+    "reservation cold boot uses the existing mobile shell before Vue mounts",
+    "delivery drawer to reservations, confirm table, send a real local message, back to list, select another reservation",
+    "isolated preview and reservation chat deep links retain the shared mobile shell",
+    "real mobile viewport uses the same fixed logical width as delivery",
+    "loading, empty, and recoverable error states keep the same mobile workspace"
+  ],
+  "mobile": [
+    {
+      "width": 320,
+      "height": 568,
+      "locale": "zh",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 320,
+      "height": 720,
+      "locale": "vi",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 320,
+      "height": 720,
+      "locale": "en",
+      "listFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "detailFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      },
+      "chatFit": {
+        "width": 320,
+        "scroll": 320,
+        "root": true
+      }
+    },
+    {
+      "width": 375,
+      "height": 667,
+      "locale": "vi",
+      "listFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      },
+      "detailFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      },
+      "chatFit": {
+        "width": 375,
+        "scroll": 375,
+        "root": true
+      }
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "locale": "en",
+      "listFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      },
+      "detailFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      },
+      "chatFit": {
+        "width": 390,
+        "scroll": 390,
+        "root": true
+      }
+    },
+    {
+      "width": 414,
+      "height": 896,
+      "locale": "vi",
+      "listFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      },
+      "detailFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      },
+      "chatFit": {
+        "width": 414,
+        "scroll": 414,
+        "root": true
+      }
+    },
+    {
+      "width": 430,
+      "height": 932,
+      "locale": "zh",
+      "listFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      },
+      "detailFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      },
+      "chatFit": {
+        "width": 430,
+        "scroll": 430,
+        "root": true
+      }
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "locale": "vi",
+      "listFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      },
+      "detailFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      },
+      "chatFit": {
+        "width": 768,
+        "scroll": 768,
+        "root": true
+      }
+    },
+    {
+      "width": 899,
+      "height": 800,
+      "locale": "en",
+      "listFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      },
+      "detailFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      },
+      "chatFit": {
+        "width": 899,
+        "scroll": 899,
+        "root": true
+      }
+    }
+  ],
+  "desktop": [
+    {
+      "width": 900,
+      "locale": "zh",
+      "pendingCount": 0,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 283,
+        "scroll": 283,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 143.734375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 214.859375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 270.59375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 326.328125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 370.8125,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 378.8125,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1024,
+      "locale": "zh",
+      "pendingCount": 0,
+      "scroll": 1024,
+      "root": false,
+      "toolbar": {
+        "width": 283,
+        "scroll": 283,
+        "buttons": [
+          {
+            "top": 157,
+            "height": 44,
+            "right": 143.734375,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 214.859375,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 270.59375,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 326.328125,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 370.8125,
+            "center": 179
+          }
+        ],
+        "refresh": {
+          "left": 378.8125,
+          "center": 179,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1280,
+      "locale": "zh",
+      "pendingCount": 0,
+      "scroll": 1280,
+      "root": false,
+      "toolbar": {
+        "width": 283,
+        "scroll": 283,
+        "buttons": [
+          {
+            "top": 159,
+            "height": 44,
+            "right": 259.734375,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 330.859375,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 386.59375,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 442.328125,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 486.8125,
+            "center": 181
+          }
+        ],
+        "refresh": {
+          "left": 494.8125,
+          "center": 181,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1440,
+      "locale": "zh",
+      "pendingCount": 0,
+      "scroll": 1440,
+      "root": false,
+      "toolbar": {
+        "width": 286,
+        "scroll": 286,
+        "buttons": [
+          {
+            "top": 171,
+            "height": 44,
+            "right": 297.734375,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 368.859375,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 424.59375,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 480.328125,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 524.8125,
+            "center": 193
+          }
+        ],
+        "refresh": {
+          "left": 535.796875,
+          "center": 193,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1920,
+      "locale": "zh",
+      "pendingCount": 0,
+      "scroll": 1920,
+      "root": false,
+      "toolbar": {
+        "width": 430,
+        "scroll": 430,
+        "buttons": [
+          {
+            "top": 183,
+            "height": 44,
+            "right": 297.734375,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 368.859375,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 424.59375,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 480.328125,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 524.8125,
+            "center": 205
+          }
+        ],
+        "refresh": {
+          "left": 679.796875,
+          "center": 205,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 900,
+      "locale": "zh",
+      "pendingCount": 1000,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 306,
+        "scroll": 306,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 143.734375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 237.640625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 293.375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 349.109375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 393.59375,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 401.59375,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 900,
+      "locale": "vi",
+      "pendingCount": 0,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 364,
+        "scroll": 364,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 161.203125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 255.484375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 327.359375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 395.890625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 451.609375,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 459.609375,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1024,
+      "locale": "vi",
+      "pendingCount": 0,
+      "scroll": 1024,
+      "root": false,
+      "toolbar": {
+        "width": 364,
+        "scroll": 364,
+        "buttons": [
+          {
+            "top": 157,
+            "height": 44,
+            "right": 161.203125,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 255.484375,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 327.359375,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 395.890625,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 451.609375,
+            "center": 179
+          }
+        ],
+        "refresh": {
+          "left": 459.609375,
+          "center": 179,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1280,
+      "locale": "vi",
+      "pendingCount": 0,
+      "scroll": 1280,
+      "root": false,
+      "toolbar": {
+        "width": 364,
+        "scroll": 364,
+        "buttons": [
+          {
+            "top": 159,
+            "height": 44,
+            "right": 277.203125,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 371.484375,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 443.359375,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 511.890625,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 567.609375,
+            "center": 181
+          }
+        ],
+        "refresh": {
+          "left": 575.609375,
+          "center": 181,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1440,
+      "locale": "vi",
+      "pendingCount": 0,
+      "scroll": 1440,
+      "root": false,
+      "toolbar": {
+        "width": 364,
+        "scroll": 364,
+        "buttons": [
+          {
+            "top": 171,
+            "height": 44,
+            "right": 315.203125,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 409.484375,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 481.359375,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 549.890625,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 605.609375,
+            "center": 193
+          }
+        ],
+        "refresh": {
+          "left": 613.609375,
+          "center": 193,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1920,
+      "locale": "vi",
+      "pendingCount": 0,
+      "scroll": 1920,
+      "root": false,
+      "toolbar": {
+        "width": 430,
+        "scroll": 430,
+        "buttons": [
+          {
+            "top": 183,
+            "height": 44,
+            "right": 315.203125,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 409.484375,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 481.359375,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 549.890625,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 605.609375,
+            "center": 205
+          }
+        ],
+        "refresh": {
+          "left": 679.796875,
+          "center": 205,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 900,
+      "locale": "vi",
+      "pendingCount": 1000,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 386,
+        "scroll": 386,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 161.203125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 278.265625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 350.140625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 418.671875,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 474.390625,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 482.390625,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 900,
+      "locale": "en",
+      "pendingCount": 0,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 318,
+        "scroll": 318,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 145.125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 228.0625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 309.046875,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 369.65625,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 406.40625,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 414.40625,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1024,
+      "locale": "en",
+      "pendingCount": 0,
+      "scroll": 1024,
+      "root": false,
+      "toolbar": {
+        "width": 318,
+        "scroll": 318,
+        "buttons": [
+          {
+            "top": 157,
+            "height": 44,
+            "right": 145.125,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 228.0625,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 309.046875,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 369.65625,
+            "center": 179
+          },
+          {
+            "top": 157,
+            "height": 44,
+            "right": 406.40625,
+            "center": 179
+          }
+        ],
+        "refresh": {
+          "left": 414.40625,
+          "center": 179,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1280,
+      "locale": "en",
+      "pendingCount": 0,
+      "scroll": 1280,
+      "root": false,
+      "toolbar": {
+        "width": 318,
+        "scroll": 318,
+        "buttons": [
+          {
+            "top": 159,
+            "height": 44,
+            "right": 261.125,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 344.0625,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 425.046875,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 485.65625,
+            "center": 181
+          },
+          {
+            "top": 159,
+            "height": 44,
+            "right": 522.40625,
+            "center": 181
+          }
+        ],
+        "refresh": {
+          "left": 530.40625,
+          "center": 181,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1440,
+      "locale": "en",
+      "pendingCount": 0,
+      "scroll": 1440,
+      "root": false,
+      "toolbar": {
+        "width": 318,
+        "scroll": 318,
+        "buttons": [
+          {
+            "top": 171,
+            "height": 44,
+            "right": 299.125,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 382.0625,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 463.046875,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 523.65625,
+            "center": 193
+          },
+          {
+            "top": 171,
+            "height": 44,
+            "right": 560.40625,
+            "center": 193
+          }
+        ],
+        "refresh": {
+          "left": 568.40625,
+          "center": 193,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 1920,
+      "locale": "en",
+      "pendingCount": 0,
+      "scroll": 1920,
+      "root": false,
+      "toolbar": {
+        "width": 430,
+        "scroll": 430,
+        "buttons": [
+          {
+            "top": 183,
+            "height": 44,
+            "right": 299.125,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 382.0625,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 463.046875,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 523.65625,
+            "center": 205
+          },
+          {
+            "top": 183,
+            "height": 44,
+            "right": 560.40625,
+            "center": 205
+          }
+        ],
+        "refresh": {
+          "left": 679.796875,
+          "center": 205,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "width": 900,
+      "locale": "en",
+      "pendingCount": 1000,
+      "scroll": 900,
+      "root": false,
+      "toolbar": {
+        "width": 341,
+        "scroll": 341,
+        "buttons": [
+          {
+            "top": 221,
+            "height": 44,
+            "right": 145.125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 250.84375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 331.828125,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 392.4375,
+            "center": 243
+          },
+          {
+            "top": 221,
+            "height": 44,
+            "right": 429.1875,
+            "center": 243
+          }
+        ],
+        "refresh": {
+          "left": 437.1875,
+          "center": 243,
+          "height": 44
+        },
+        "withinViewport": true,
+        "fits": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    }
+  ],
+  "errors": []
+}

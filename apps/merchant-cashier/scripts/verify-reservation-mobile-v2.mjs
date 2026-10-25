@@ -174,24 +174,52 @@ try {
   await errorPage.route('**/api/v1/merchant/reservations',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Local layout review: temporary unavailable'})}));
   await errorPage.goto(base+'/reservations');await mobileShell(errorPage);await errorPage.locator('.state-panel--error').waitFor();await capture(errorPage,'12-error-state');await errorContext.close();
   report.flows.push('loading, empty, and recoverable error states keep the same mobile workspace');
-  for(const [width,locale] of [[900,'zh'],[1280,'zh'],[1440,'zh'],[900,'vi'],[1280,'vi'],[1440,'vi'],[900,'en'],[1280,'en'],[1440,'en']]){
+  const desktopCases=['zh','vi','en'].flatMap(locale=>[
+    ...[900,1024,1280,1440,1920].map(width=>({width,locale,pendingCount:0})),
+    {width:900,locale,pendingCount:1000},
+  ]);
+  for(const {width,locale,pendingCount} of desktopCases){
     const ctx=await context(width,900,locale);const page=await pageFor(ctx);
+    if(pendingCount)await page.route('**/api/v1/merchant/reservations',async route=>{
+      const response=await route.fetch();const payload=await response.json();
+      const sample=payload.data.reservations.find(row=>row.kind==='DINE_IN');
+      // Browser-only stress data: no extra reservations are written to the API.
+      payload.data.reservations=[
+        ...payload.data.reservations.filter(row=>row.status!=='PENDING'),
+        ...Array.from({length:pendingCount},(_,index)=>({...sample,id:`toolbar-stress-${index}`,status:'PENDING'})),
+      ];
+      await route.fulfill({response,json:payload});
+    });
     await page.goto(base+`/reservations?reservationId=${confirmed.id}`);await page.locator('.reservation-detail-panel').waitFor();await dismiss(page);
     assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(),0,'Desktop retains its desktop layout');
     const fitResult=await fit(page,`${width}-desktop`);assert.equal(fitResult.root,false);
     assert.equal(await page.locator('.fulfillment-queue:visible').count(),1);assert.equal(await page.locator('.fulfillment-main:visible').count(),1);
     assert.equal(await page.locator('.fulfillment-queue input, .reservation-controls, .reservation-zone-hint').count(),0,'Desktop has no date, phone filters or timezone hint');
     assert.equal(await page.locator('.fulfillment-queue .workflow-refresh-button:visible').count(),1,'Desktop retains its refresh control');
-    const filters=await page.locator('.fulfillment-queue .workflow-filter-chips').evaluate(element=>({
-      width:element.clientWidth,scroll:element.scrollWidth,
-      fits:[...element.querySelectorAll('button')].map(button=>{
-        const box=button.getBoundingClientRect(),parent=element.getBoundingClientRect();
-        return box.left>=parent.left&&box.right<=parent.right+1&&button.scrollWidth<=button.clientWidth+1;
-      }),
-    }));
+    const filters=await page.locator('.fulfillment-queue .workflow-filter-chips').evaluate(element=>{
+      const parent=element.getBoundingClientRect();
+      const toolbar=element.closest('.pickup-queue-toolbar').getBoundingClientRect();
+      const refresh=element.closest('.pickup-queue-toolbar').querySelector('.workflow-refresh-button').getBoundingClientRect();
+      const buttons=[...element.querySelectorAll('button')].map(button=>{
+        const box=button.getBoundingClientRect();
+        return {top:box.top,height:box.height,right:box.right,center:box.top+box.height/2};
+      });
+      return {
+        width:element.clientWidth,scroll:element.scrollWidth,buttons,
+        refresh:{left:refresh.left,center:refresh.top+refresh.height/2,height:refresh.height},
+        withinViewport:toolbar.left>=0&&toolbar.right<=innerWidth,
+        fits:[...element.querySelectorAll('button')].map(button=>{
+          const box=button.getBoundingClientRect();
+          return box.left>=parent.left&&box.right<=parent.right+1&&button.scrollWidth<=button.clientWidth+1&&getComputedStyle(button).whiteSpace==='nowrap';
+        }),
+      };
+    });
     assert.equal(filters.fits.length,5,'Desktop has five merchant status filters');
     assert(filters.scroll<=filters.width+1&&filters.fits.every(Boolean),'Every desktop filter is fully visible without horizontal scrolling');
-    await capture(page,`09-desktop-${width}-${locale}`);report.desktop.push({width,locale,...fitResult});await ctx.close();
+    assert(filters.withinViewport&&filters.buttons.every(button=>Math.abs(button.center-filters.refresh.center)<=1&&button.height>=44),'All five desktop statuses and refresh share one row with touch targets preserved');
+    assert(filters.buttons.at(-1).right<=filters.refresh.left,'The refresh control does not overlap a status');
+    if(pendingCount)assert((await page.locator('.fulfillment-queue .workflow-filter-chips button').nth(1).innerText()).includes(String(pendingCount)),'The full pending count remains visible');
+    await capture(page,`09-desktop-${width}-${locale}${pendingCount?'-count-1000':''}`);report.desktop.push({width,locale,pendingCount,...fitResult,toolbar:filters});await ctx.close();
   }
   assert.deepEqual(report.errors,[]);report.pass=true;
 } catch(error) {

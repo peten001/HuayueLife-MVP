@@ -207,12 +207,25 @@ function itemName(item: ArrivalReservation['items'][number]) {
 .reservations-page{
   color:#24352b;
 }
-.reservations-page .pickup-queue-toolbar{
-  align-items:start;
-}
-.reservations-page .pickup-queue-toolbar .workflow-filter-chips{
-  flex-wrap:wrap;
-  overflow:visible;
+@media(min-width:900px){
+  /* Let the complete toolbar determine the queue's minimum width, including
+     translated labels and the pending count, rather than wrapping its controls. */
+  .reservations-page .fulfillment-workspace{
+    grid-template-columns:minmax(min-content,3fr) minmax(0,7fr);
+  }
+  .reservations-page .pickup-queue-toolbar{
+    grid-template-columns:minmax(max-content,1fr) 44px;
+    align-items:center;
+  }
+  .reservations-page .pickup-queue-toolbar .workflow-filter-chips{
+    flex-wrap:nowrap;
+    gap:4px;
+    overflow:visible;
+  }
+  .reservations-page .pickup-queue-toolbar .workflow-filter-chips button{
+    padding-inline:8px;
+    white-space:nowrap;
+  }
 }
 .reservation-list{
   gap:7px;
