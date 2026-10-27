@@ -40,8 +40,12 @@ export function newOrderSpeechKey(terminal: SoundTerminal, order: NewOrderAlert)
 export function speechLanguage(locale: Locale) {
   return ({ zh: 'zh-CN', vi: 'vi-VN', en: 'en-US' } as const)[locale];
 }
-/** A soft descending doorbell at the till; two separated high tones in the kitchen. */
+/** Both desktop terminals use the same soft descending doorbell; preferences stay independent. */
+const newOrderDoorbell = [
+  { frequency: 784, start: 0, duration: .18 },
+  { frequency: 622, start: .20, duration: .28 },
+] as const;
 export const newOrderTones = {
-  cashier: [{ frequency: 784, start: 0, duration: .18 }, { frequency: 622, start: .20, duration: .28 }],
-  kds: [{ frequency: 1047, start: 0, duration: .14 }, { frequency: 1047, start: .24, duration: .14 }],
+  cashier: newOrderDoorbell,
+  kds: newOrderDoorbell,
 } as const;

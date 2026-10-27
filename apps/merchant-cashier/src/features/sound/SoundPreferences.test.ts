@@ -20,7 +20,7 @@ describe('device sound settings', () => {
     expect(wrapper.findAll('.sound-preferences')).toHaveLength(1);
     expect(wrapper.get('.sound-preferences').attributes('data-terminal')).toBe(terminal);
     expect(wrapper.text()).toContain(terminal === 'cashier' ? '只保存在当前设备的收银端' : '只保存在当前设备的 KDS 端');
-    expect(wrapper.text()).not.toContain(terminal === 'cashier' ? '厨房使用两声' : '收银使用轻柔');
+    expect(wrapper.text()).not.toContain(terminal === 'cashier' ? '厨房使用柔和' : '收银使用轻柔');
     wrapper.unmount();
   });
   it('updates only this terminal’s saved mode and volume without writing merchant settings', async () => {

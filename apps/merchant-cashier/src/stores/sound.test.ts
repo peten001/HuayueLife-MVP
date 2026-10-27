@@ -67,12 +67,14 @@ describe('new order audio settings and playback', () => {
     localStorage.setItem(cashierStorageKeys.soundEnabled, '1'); sound.disable();
     expect(localStorage.getItem(cashierStorageKeys.soundEnabled)).toBe('1');
   });
-  it('plays a descending doorbell in cashier and two matching short tones in KDS', async () => {
+  it('plays the unchanged cashier doorbell in both cashier and KDS', async () => {
     await deliver('cashier', order('a'));
     expect(frequencies).toEqual([784, 622]); expect(starts[1]! - starts[0]!).toBeCloseTo(.2);
+    const cashierFrequencies = [...frequencies]; const cashierStarts = [...starts];
     frequencies.length = starts.length = 0;
     await deliver('kds', order('a'));
-    expect(frequencies).toEqual([1047, 1047]); expect(starts[1]! - starts[0]!).toBeCloseTo(.24);
+    expect(frequencies).toEqual(cashierFrequencies); expect(starts).toEqual(cashierStarts);
+    expect(spoken.map(utterance => utterance.text)).toEqual(['02桌有新订单，请查看。', '02桌有新订单，请制作。']);
   });
   it.each(['tone', 'speech', 'both'] as const)('honors %s mode', async mode => {
     useSoundStore().setMode(mode); await deliver('cashier', order('a'));
