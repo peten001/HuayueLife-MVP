@@ -1,6 +1,6 @@
 # 华越优选 HuayueLife-MVP
 
-2026-10-27 KDS 同款叮咚音（修改完成、准备发布）：用户要求 KDS 改为与收银相同提示音。电脑两端复用原收银 784 → 622 Hz 下降叮咚音；收银声音本身、厨房“请制作”播报、独立音量／语言／模式及手机旧声音均保持。中英越提示与 KDS 本地试听页同步。817 项测试、类型／lint、独立 KDS 正式构建通过，仅发布 KDS 静态页面；线上收银维持 reservation-single-row-20261025-v1，API PID 3728033、restart=19，不重启或迁移。候选 kds-doorbell-20261027-v1，实际发布结果见 docs/release/kds-doorbell-20261027-v1.md。
+2026-10-27 KDS 同款叮咚音已提交、同步 GitHub main 并上线：代码 5317908274757843c8f84b72a3363c0a2a619a89，版本 kds-doorbell-20261027-v1。按用户要求，电脑 KDS 复用收银原有 784 → 622 Hz 柔和下降叮咚音，音高／时序／时长完全一致；厨房“请制作”播报、独立音量／语言／模式及手机旧声音保持。817 项测试、类型／lint、KDS 正式构建通过；本地试听完成，服务器与外网各验证全部 28 个文件，线上入口直接核对共享音效数组且无旧 1047 Hz 高音。只发布 KDS：收银指针及全部文件哈希保持，API PID 3728033、restart=19、online，环境／Nginx／后台保持，无迁移、重启或生产业务操作。旧 KDS 完整备份 2,623,322 bytes、160 文件逐项校验，保留 140 个旧哈希资源。备份 /opt/backups/yunqiao-kds-doorbell-20261027-v1，DEPLOYMENT_PASS／PUBLIC_PASS／TONE_PASS 均 PASS；用户刷新 KDS 后在厨显设置试听。详见 docs/release/kds-doorbell-20261027-v1.md。
 
 2026-10-25 用餐预约筛选单行优化已提交、同步 GitHub main 并上线：代码 c9475e78fa52838688c3c055e5d499ffb1ad7e15，版本 reservation-single-row-20261025-v1。保留待处理／待确认／已确认／已结束／全部五个状态及电脑刷新，队列按工具栏内容确定最小宽度并收紧留白，完整同排、不横滑、不截字；手机保留现行单行五状态、无刷新。817 项收银测试、类型／lint／构建、隔离 API 5 流程与 9 手机／18 电脑三语布局通过，覆盖 900px 及浏览器模拟待确认 1000 条。服务器和外网分别核对 68 文件，390／900／1366 入口无页面错误或横向溢出。旧收银完整备份 7,761,335 bytes、866 文件逐项校验，保留 835 旧哈希资源；API PID 3728033、restart=19、online 保持，无迁移、重启或生产业务写入。备份 /opt/backups/yunqiao-reservation-single-row-20261025-v1；仅发布收银，用户刷新后生效，小程序无需重传。详见 docs/release/reservation-single-row-20261025-v1.md。
 
