@@ -60,9 +60,9 @@ export class PlatformUploadsService {
       throw new BadRequestException('Invalid image type');
     }
 
-    const fileSize = file.size ?? file.buffer.byteLength;
-    if (fileSize > 5 * 1024 * 1024) {
-      throw new BadRequestException('Image file exceeds 5MB');
+    const fileSize = Math.max(file.size ?? 0, file.buffer.byteLength);
+    if (fileSize > 20 * 1024 * 1024) {
+      throw new BadRequestException('Image file exceeds 20MB');
     }
 
     return {

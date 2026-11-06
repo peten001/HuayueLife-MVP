@@ -51,6 +51,8 @@ export async function exploreRequest<T = unknown>(method: 'get' | 'put' | 'post'
 }
 
 platformHttp.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) config.timeout = 120000;
+  else if (/\/(publish|bulk|import-confirm)$/.test(config.url || '')) config.timeout = 60000;
   const token = getPlatformToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -271,9 +273,11 @@ export async function getPlatformReviews(filters: PlatformReviewFilters = {}) {
 export async function moderatePlatformReview(
   id: string,
   action: 'hide' | 'publish' | 'restore',
+  reason?: {reasonCode:string;reasonNote?:string},
 ) {
   const response = await platformHttp.post<ApiResponse<PlatformReviewListItem>>(
     `/platform/reviews/${id}/${action}`,
+    reason,
   );
   return response.data.data;
 }

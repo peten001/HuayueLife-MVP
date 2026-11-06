@@ -103,6 +103,9 @@ export class PlatformMerchantsController {
     return this.service.previewMerchantImport(file);
   }
 
+  @Post('import-revise')
+  reviseImport(@Body() body:{sessionId:string;mapping?:Record<string,string>;edits?:Array<{rowNumber:number;rawData:Record<string,string>}>}) {return this.service.reviseMerchantImport(body);}
+
   @Post('import-confirm')
   importConfirm(@Body() body: MerchantImportConfirmRequest): Promise<MerchantImportConfirmResult> {
     return this.service.confirmMerchantImport(body);
@@ -158,7 +161,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/images/:imageId/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   replaceImage(
     @Param('id') id: string,
     @Param('imageId') imageId: string,
@@ -173,7 +176,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/images/:imageType/upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   uploadImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,
@@ -188,7 +191,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/primary-images/:imageType/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   replacePrimaryImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,

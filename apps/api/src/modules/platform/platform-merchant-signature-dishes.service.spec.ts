@@ -57,16 +57,16 @@ describe('PlatformMerchantSignatureDishesService', () => {
     expect(item).toMatchObject({ nameZh: '招牌菜', nameVi: null, nameEn: null, imageUrl: '/a.png', sortOrder: 0 });
   });
 
-  it('enforces all-row 15 limit including hidden rows and releases quota after hard delete', async () => {
+  it('accepts more than 15 dishes including hidden items and preserves ordering after removal', async () => {
     const { service, rows } = fixture();
     for (let i = 0; i < 15; i += 1) await service.create(1n, { nameZh: `菜${i}`, imageUrl: `/a${i}.png` });
     rows[14].isVisible = false;
-    await expect(service.create(1n, { nameZh: '第16道', imageUrl: '/16.png' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create(1n, { nameZh: '第16道', imageUrl: '/16.png' })).resolves.toMatchObject({nameZh:'第16道',sortOrder:15});
     const deletedId = rows[0].id;
     await expect(service.remove(1n, deletedId)).resolves.toEqual({ id: deletedId.toString(), deleted: true });
-    expect(rows).toHaveLength(14);
-    await expect(service.create(1n, { nameZh: '新第15道', imageUrl: '/new.png' })).resolves.toMatchObject({ nameZh: '新第15道' });
     expect(rows).toHaveLength(15);
+    await expect(service.create(1n, { nameZh: '新第15道', imageUrl: '/new.png' })).resolves.toMatchObject({ nameZh: '新第15道' });
+    expect(rows).toHaveLength(16);
   });
 
   it('lists hidden rows, hides/restores, moves adjacent rows, and protects merchant ownership', async () => {

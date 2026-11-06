@@ -1,0 +1,73 @@
+{
+  "date": "2026-11-05",
+  "scope": "desktop-platform-admin-design-review-only",
+  "tool": "built-in imagegen",
+  "images": [
+    {
+      "id": "settings-v2",
+      "title": "平台设置修订",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-302a1c6d-09ac-40bc-bbc9-8babe9e3c693.png",
+      "file": "01-settings-v2.png"
+    },
+    {
+      "id": "merchant-capabilities",
+      "title": "商家账号与分项能力",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-b8c2a441-8101-4321-8581-ab2a83977f49.png",
+      "file": "02-merchant-capabilities.png"
+    },
+    {
+      "id": "import",
+      "title": "新增与批量导入",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-5d20b4fe-64d5-48c9-9a2e-a00f3d505f62.png",
+      "file": "03-import.png"
+    },
+    {
+      "id": "merchant-profile",
+      "title": "商家基础资料与营业时间",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-1b8b04f6-b02e-4a35-a505-695e4142fd33.png",
+      "file": "04-merchant-profile.png"
+    },
+    {
+      "id": "users",
+      "title": "用户档案与订单关系",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-8c659878-2fba-4199-80d9-c9aaf1694d96.png",
+      "file": "05-users.png"
+    },
+    {
+      "id": "categories",
+      "title": "生活分类与发布预览",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-697293e4-ced5-414a-9b37-a5b41d4363b1.png",
+      "file": "06-categories.png"
+    },
+    {
+      "id": "industries",
+      "title": "行业与默认能力",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-8e9ed0f7-f3a1-4cfa-9083-f35a678093f9.png",
+      "file": "07-industries.png"
+    },
+    {
+      "id": "tag-editor",
+      "title": "公共标签完整编辑",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-d2c34e2f-4979-496a-a233-ba9633776ca1.png",
+      "file": "08-tag-editor.png"
+    },
+    {
+      "id": "login",
+      "title": "平台管理员登录",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-f62e4577-1402-4491-8b81-0e36d21e16bc.png",
+      "file": "09-login.png"
+    },
+    {
+      "id": "gallery-v2",
+      "title": "图库20MB与自动优化修订",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-885f47b4-1f08-449a-9c68-abc55745d188.png",
+      "file": "10-gallery-v2.png"
+    },
+    {
+      "id": "recycle",
+      "title": "商家回收站与恢复预览",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-0ddbda8d-e1ef-4db5-a0a8-f6d25d77cb84.png",
+      "file": "11-recycle.png"
+    }
+  ]
+}

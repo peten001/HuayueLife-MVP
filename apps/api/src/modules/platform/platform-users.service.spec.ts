@@ -24,7 +24,7 @@ describe('PlatformUsersService nullable order owners', () => {
       .mockResolvedValueOnce(input?.cancelledOrders ?? []);
     const orderFindMany = jest.fn().mockResolvedValue(input?.latestOrders ?? []);
     const prisma = {
-      user: { findMany: jest.fn().mockResolvedValue([user]) },
+      user: { findMany: jest.fn().mockResolvedValue([user]),count:jest.fn().mockResolvedValue(1) },
       order: { groupBy, findMany: orderFindMany },
     };
 
@@ -35,7 +35,7 @@ describe('PlatformUsersService nullable order owners', () => {
     };
   }
 
-  it('keeps customer order statistics unchanged', async () => {
+  it('counts customer orders including cancellations while amount includes completed orders only', async () => {
     const { service } = createService({
       allOrders: [
         {
@@ -46,7 +46,7 @@ describe('PlatformUsersService nullable order owners', () => {
         },
       ],
       completedOrders: [
-        { userId: user.id, _count: { _all: 1 } },
+        { userId: user.id, _count: { _all: 1 },_sum:{totalAmountVnd:90000n} },
       ],
       cancelledOrders: [
         { userId: user.id, _count: { _all: 1 } },
@@ -62,7 +62,7 @@ describe('PlatformUsersService nullable order owners', () => {
       expect.objectContaining({
         id: user.id.toString(),
         orderCount: 2,
-        orderAmount: '120000',
+        orderAmount: '90000',
         completedOrderCount: 1,
         canceledOrderCount: 1,
         city: 'Hanoi',
@@ -80,7 +80,7 @@ describe('PlatformUsersService nullable order owners', () => {
     }
     expect(orderFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: { in: [user.id], not: null } },
+        where: expect.objectContaining({ userId: { in: [user.id], not: null },AND:expect.any(Array) }),
       }),
     );
   });

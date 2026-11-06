@@ -6,6 +6,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import AdmZip = require('adm-zip');
 import {
@@ -26,7 +28,7 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import ExcelJS = require('exceljs');
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, stat, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import {
@@ -314,6 +316,9 @@ type MerchantImportSession = {
   createdAt: number;
   tempDir: string | null;
   rows: MerchantImportPreviewRow[];
+  records?: Array<Record<string,string>>;
+  imported?: Record<number,string>;
+  inFlight?: boolean;
 };
 
 type PreparedMerchantImportSource = {
@@ -372,10 +377,16 @@ const BUSINESS_HOURS_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const BUSINESS_HOURS_RANGE_PATTERN =
   /^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
 const MAX_PLATFORM_BUSINESS_HOURS_INTERVALS = 2;
-const MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE = 4;
 
 @Injectable()
-export class PlatformMerchantsService {
+export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
+  private importCleanupTimer?: ReturnType<typeof setInterval>;
+  async onModuleInit(){
+    const entries=await readdir(tmpdir(),{withFileTypes:true});
+    await Promise.all(entries.filter(entry=>entry.isDirectory()&&/^huayue-merchant-import-[A-Za-z0-9]{6}$/.test(entry.name)).map(async entry=>{const target=join(tmpdir(),entry.name);try{if(Date.now()-(await stat(target)).mtimeMs>IMPORT_SESSION_TTL_MS)await this.removeDirectory(target);}catch{/* another expired session may already have been cleaned */}}));
+    this.importCleanupTimer=setInterval(()=>{void this.cleanupExpiredImportSessions().catch(()=>undefined);},60000);this.importCleanupTimer.unref();}
+  async onModuleDestroy(){if(this.importCleanupTimer)clearInterval(this.importCleanupTimer);await Promise.all([...this.importSessions.keys()].map(id=>this.destroyImportSession(id)));}
+
   private readonly logger = new Logger(PlatformMerchantsService.name);
   private readonly importSessions = new Map<string, MerchantImportSession>();
   private readonly signatureCategories: SignatureCategoryService;
@@ -748,7 +759,7 @@ export class PlatformMerchantsService {
   async createDisplayMerchant(dto: CreateDisplayMerchantDto) {
     if (!dto.nameZh.trim()) throw new BadRequestException('请填写商家中文名称');
     await this.dictionaries.ensureDefaults();
-    const businessTypeId = await this.resolveBusinessTypeId(dto.businessTypeId);
+    const businessTypeId = dto.businessTypeId ? await this.resolveBusinessTypeId(dto.businessTypeId) : null;
     const businessHours =
       dto.businessHours === undefined
         ? DEFAULT_BUSINESS_HOURS
@@ -805,12 +816,12 @@ export class PlatformMerchantsService {
           homepageCategoryKeys: stringifyHomepageCategoryKeys(homepageCategoryKeys),
           manualPopular,
           isVisibleOnClient:
-            dto.isVisibleOnClient === undefined ? true : dto.isVisibleOnClient,
+            false,
           reportFeatureEnabled: false,
           sortOrder: dto.sortOrder ?? 0,
           isNew: Boolean(dto.isNew),
           recommendedAt: tagIds.length ? new Date() : null,
-          status: dto.status ?? MerchantStatus.ACTIVE,
+          status: dto.status ?? MerchantStatus.PENDING,
         },
       });
 
@@ -919,11 +930,14 @@ export class PlatformMerchantsService {
         createdAt: Date.now(),
         tempDir: prepared.tempDir,
         rows,
+        records: prepared.records,
+        imported: {},
       });
       prepared.tempDir = null;
       return {
         sessionId,
         sourceType: prepared.sourceType,
+        columns: Object.keys(prepared.records[0] || {}),
         totalRows: rows.length,
         validRows: rows.filter((item) => item.status !== 'ERROR').length,
         invalidRows: rows.filter((item) => item.status === 'ERROR').length,
@@ -935,6 +949,24 @@ export class PlatformMerchantsService {
       }
       throw error;
     }
+  }
+
+  async reviseMerchantImport(body: {sessionId:string;mapping?:Record<string,string>;edits?:Array<{rowNumber:number;rawData:Record<string,string>}>}) {
+    const session=this.importSessions.get(body.sessionId);
+    if(!session)throw new BadRequestException('导入会话已失效，请重新上传');
+    if(session.inFlight)throw new ConflictException('导入正在处理，请稍后重试');
+    const fields=['nameZh','nameVi','nameEn','businessType','contactPhone','contactName','province','addressZh','latitude','longitude','coverPath','营业时间'];
+    const originals=session.records||session.rows.map(row=>row.rawData);
+    const mapping=body.mapping||{};
+    if(Object.values(mapping).some(v=>typeof v!=='string')||body.edits&&!Array.isArray(body.edits))throw new BadRequestException('列映射格式不正确');
+    const records=originals.map((record,index)=>{
+      const edited=body.edits?.find(row=>row.rowNumber===index+2)?.rawData;
+      const mapped=Object.fromEntries(fields.map(field=>[field,String(record[mapping[field]||field]||'')]));
+      for(const field of fields)if(edited&&typeof edited[field]==='string')mapped[field]=edited[field];
+      return mapped;
+    });
+    session.rows=await this.buildMerchantImportPreview(records,session.sourceType,session.tempDir);
+    return {sessionId:session.id,sourceType:session.sourceType,totalRows:session.rows.length,validRows:session.rows.filter(row=>row.status!=='ERROR').length,invalidRows:session.rows.filter(row=>row.status==='ERROR').length,columns:Object.keys(originals[0]||{}),rows:session.rows};
   }
 
   async confirmMerchantImport(body: MerchantImportConfirmRequest): Promise<MerchantImportConfirmResult> {
@@ -953,12 +985,15 @@ export class PlatformMerchantsService {
       ? new Set(body.rowNumbers)
       : null;
     const rows = session.rows.filter((row) =>
-      requestedRowNumbers ? requestedRowNumbers.has(row.rowNumber) : row.status !== 'ERROR',
+      requestedRowNumbers ? requestedRowNumbers.has(row.rowNumber) : row.status !== 'ERROR' && !row.warnings.some(warning=>warning.includes('重复')||warning.includes('已存在')),
     );
     if (!rows.length) {
       throw new BadRequestException('没有可导入的有效数据');
     }
 
+    if(session.inFlight)throw new ConflictException('该导入正在执行，请等待完成');
+    session.inFlight=true;
+    session.imported??={};
     const createdMerchantIds: string[] = [];
     const failedRows: MerchantImportConfirmResult['failedRows'] = [];
     let importedCount = 0;
@@ -967,6 +1002,7 @@ export class PlatformMerchantsService {
 
     try {
       for (const row of rows) {
+        if(session.imported[row.rowNumber]){createdMerchantIds.push(session.imported[row.rowNumber]);importedCount++;continue;}
         const previewErrors = Array.isArray(row.errors) ? row.errors : [];
         if (previewErrors.length) {
           failedRows.push({ rowNumber: row.rowNumber, errors: previewErrors });
@@ -982,7 +1018,7 @@ export class PlatformMerchantsService {
         let coverUrl: string | undefined;
         let attemptedImageUpload = false;
         try {
-          const businessType = await this.resolveSelectableBusinessTypeByCode(normalized.businessTypeCode);
+          const businessType = normalized.businessTypeCode ? await this.resolveSelectableBusinessTypeByCode(normalized.businessTypeCode) : null;
           if (normalized.coverPath) {
             attemptedImageUpload = true;
             const uploadedCover = await this.uploadImportCoverImage(normalized.coverPath, session);
@@ -993,22 +1029,25 @@ export class PlatformMerchantsService {
             nameZh: normalized.nameZh,
             nameVi: normalized.nameVi,
             nameEn: normalized.nameEn,
-            businessTypeId: businessType.id.toString(),
+            businessTypeId: businessType?.id.toString(),
             merchantMode: MerchantMode.DISPLAY,
             contactPhone: normalized.contactPhone,
             contactName: normalized.contactName,
             province: normalized.province,
             city: normalized.province,
             addressZh: normalized.addressZh,
-            latitude: normalized.latitude as number,
-            longitude: normalized.longitude as number,
+            latitude: normalized.latitude ?? 0,
+            longitude: normalized.longitude ?? 0,
             openingHoursText: normalized.openingHoursText || undefined,
             businessHours: normalized.businessHours,
             coverUrl,
+            isVisibleOnClient: false,
+            status: MerchantStatus.PENDING,
           });
           if (coverUrl) {
             imageUploadSuccessCount += 1;
           }
+          session.imported[row.rowNumber]=created.id;
           createdMerchantIds.push(created.id);
           importedCount += 1;
         } catch (error) {
@@ -1035,7 +1074,8 @@ export class PlatformMerchantsService {
         createdMerchantIds,
       };
     } finally {
-      await this.destroyImportSession(sessionId);
+      session.inFlight=false;
+      if(!failedRows.length && session.tempDir){await this.removeDirectory(session.tempDir);session.tempDir=null;}
     }
   }
 
@@ -1162,7 +1202,7 @@ export class PlatformMerchantsService {
   async updateTags(id: bigint, dto: UpdateMerchantTagsDto) {
     await this.requireMerchant(id);
     const tagIds = parseIdList(dto.promotionTagIds);
-    await this.assertPromotionTagScopeLimits(tagIds);
+    await this.assertPromotionTagsExist(tagIds);
     const manualPopular = await this.hasPromotionTagCode(tagIds, 'HOT_FOOD');
     await this.prisma.$transaction(async (tx) => {
       await tx.merchantPromotionTag.deleteMany({ where: { merchantId: id } });
@@ -1188,8 +1228,15 @@ export class PlatformMerchantsService {
     if (merchant.staff.some((item) => item.role === StaffRole.OWNER)) {
       return this.findById(id);
     }
-    const username = merchant.contactPhone.trim();
-    if (!username) throw new BadRequestException('商家手机号不能为空');
+    let username = merchant.contactPhone.trim();
+    if (!username) {
+      const saved = await this.prisma.platformSetting.findUnique({
+        where: { key: `platform.merchant-draft.${id}` },
+      });
+      const profile = (saved?.value as { profile?: { contactPhone?: unknown } } | undefined)?.profile;
+      if (typeof profile?.contactPhone === 'string') username = profile.contactPhone.trim();
+    }
+    if (!username) throw new BadRequestException('请先在商家资料中填写联系电话并保存草稿');
     const existingOwner = await this.prisma.merchantStaff.findFirst({
       where: { username },
       select: { id: true },
@@ -1213,6 +1260,7 @@ export class PlatformMerchantsService {
         data: {
           claimStatus: MerchantClaimStatus.CLAIMED,
           merchantMode: MerchantMode.MANAGED,
+          ...(merchant.status === MerchantStatus.PENDING ? { status: MerchantStatus.ACTIVE } : {}),
         },
       });
       await this.signatureCategories.ensureForClaimedMerchantInTransaction(tx, id);
@@ -1796,20 +1844,11 @@ export class PlatformMerchantsService {
     return count > 0;
   }
 
-  private async assertPromotionTagScopeLimits(tagIds: bigint[]) {
+  private async assertPromotionTagsExist(tagIds: bigint[]) {
     if (!tagIds.length) return;
-    const tags = await this.prisma.promotionTag.findMany({
-      where: { id: { in: tagIds } },
-      select: { scope: true },
-    });
-    const cuisineCount = tags.filter((tag) => tag.scope === PromotionTagScope.CUISINE).length;
-    const sceneCount = tags.filter((tag) => tag.scope === PromotionTagScope.SCENE).length;
-    if (cuisineCount > MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE) {
-      throw new BadRequestException(`每个商家最多选择 ${MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE} 个菜系标签`);
-    }
-    if (sceneCount > MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE) {
-      throw new BadRequestException(`每个商家最多选择 ${MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE} 个场景标签`);
-    }
+    const tags = await this.prisma.promotionTag.findMany({ where: { id: { in: tagIds } }, select: {id:true} });
+    const count = tags.length;
+    if (count !== new Set(tagIds.map(String)).size) throw new BadRequestException('部分标签已不存在，请刷新后重试');
   }
 
   private async loadCapabilities() {
@@ -1905,8 +1944,8 @@ export class PlatformMerchantsService {
     const headerRow = worksheet.getRow(1);
     const headers = Array.from({ length: worksheet.columnCount }, (_, index) =>
       normalizeImportText(headerRow.getCell(index + 1).text),
-    ).filter((item) => item.length > 0);
-    if (!headers.length) {
+    );
+    if (!headers.some(Boolean)) {
       throw new BadRequestException('XLSX 第一行缺少表头');
     }
 
@@ -1915,7 +1954,7 @@ export class PlatformMerchantsService {
       const row = worksheet.getRow(rowNumber);
       const record: Record<string, string> = {};
       headers.forEach((header, index) => {
-        record[header] = normalizeImportText(row.getCell(index + 1).text);
+        if(header)record[header] = normalizeImportText(row.getCell(index + 1).text);
       });
       if (hasAnyCsvValue(record)) {
         records.push(record);
@@ -2017,18 +2056,18 @@ export class PlatformMerchantsService {
       example: '688便利店',
     });
     validateImportStringField(errors, rowNumber, 'nameVi', rawData.nameVi, normalized.nameVi, {
-      required: true,
+      required: false,
       maxLength: 120,
       example: 'Cua hang tien loi 688',
     });
     validateImportStringField(errors, rowNumber, 'nameEn', rawData.nameEn, normalized.nameEn, {
-      required: true,
+      required: false,
       maxLength: 120,
       example: '688 Convenience Store',
     });
 
     if (!normalized.businessTypeCode) {
-      errors.push(formatImportError(rowNumber, 'businessType', rawBusinessType, '不能为空', '请填写系统允许的业务类型编码'));
+      warnings.push('行业尚未填写，保存为草稿后补充');
     } else {
       const businessType = businessTypeByCode.get(normalized.businessTypeCode);
       if (!businessType) {
@@ -2045,12 +2084,12 @@ export class PlatformMerchantsService {
     }
 
     validateImportStringField(errors, rowNumber, 'contactPhone', rawData.contactPhone, normalized.contactPhone, {
-      required: true,
+      required: false,
       maxLength: 32,
       example: '0333520688',
     });
     validateImportStringField(errors, rowNumber, 'contactName', rawData.contactName, normalized.contactName, {
-      required: true,
+      required: false,
       maxLength: 64,
       example: 'Nguyen Van A',
     });
@@ -2060,19 +2099,19 @@ export class PlatformMerchantsService {
       example: 'Bac Giang',
     });
     validateImportStringField(errors, rowNumber, 'addressZh', rawData.addressZh, normalized.addressZh, {
-      required: true,
+      required: false,
       maxLength: 255,
       example: '北江省越安县云中工业区商业街18号',
     });
 
-    if (normalized.latitude === null || !Number.isFinite(normalized.latitude)) {
+    if (rawData.latitude?.trim() && (normalized.latitude === null || !Number.isFinite(normalized.latitude))) {
       errors.push(formatImportError(rowNumber, 'latitude', rawData.latitude, '格式错误', '必须填写合法纬度，范围 -90 至 90'));
-    } else if (normalized.latitude < -90 || normalized.latitude > 90) {
+    } else if (normalized.latitude !== null && (normalized.latitude < -90 || normalized.latitude > 90)) {
       errors.push(formatImportError(rowNumber, 'latitude', rawData.latitude, '超出范围', '必须填写合法纬度，范围 -90 至 90'));
     }
-    if (normalized.longitude === null || !Number.isFinite(normalized.longitude)) {
+    if (rawData.longitude?.trim() && (normalized.longitude === null || !Number.isFinite(normalized.longitude))) {
       errors.push(formatImportError(rowNumber, 'longitude', rawData.longitude, '格式错误', '必须填写合法经度，范围 -180 至 180'));
-    } else if (normalized.longitude < -180 || normalized.longitude > 180) {
+    } else if (normalized.longitude !== null && (normalized.longitude < -180 || normalized.longitude > 180)) {
       errors.push(formatImportError(rowNumber, 'longitude', rawData.longitude, '超出范围', '必须填写合法经度，范围 -180 至 180'));
     }
 
@@ -2086,7 +2125,7 @@ export class PlatformMerchantsService {
         errors.push(formatImportError(rowNumber, 'coverPath', rawData.coverPath, coverPathValidation, '请填写 ZIP 包内相对路径，例如 images/BG001_688便利店/cover.jpg'));
       }
     }
-    normalized.businessHours = parseImportBusinessHours(rawData, rowNumber, errors);
+    normalized.businessHours = Object.keys(rawData).some(key=>['营业时间','openingHoursText'].includes(key)&&String(rawData[key]||'').trim()) ? parseImportBusinessHours(rawData, rowNumber, errors) : {};
 
     const hasLatitude = normalized.latitude !== null && Number.isFinite(normalized.latitude);
     const hasLongitude = normalized.longitude !== null && Number.isFinite(normalized.longitude);
@@ -2183,7 +2222,7 @@ export class PlatformMerchantsService {
   private async cleanupExpiredImportSessions() {
     const now = Date.now();
     const expiredIds = Array.from(this.importSessions.values())
-      .filter((session) => now - session.createdAt >= IMPORT_SESSION_TTL_MS)
+      .filter((session) => !session.inFlight && now - session.createdAt >= IMPORT_SESSION_TTL_MS)
       .map((session) => session.id);
     for (const sessionId of expiredIds) {
       await this.destroyImportSession(sessionId);
@@ -3052,7 +3091,7 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
   const nameEn = normalizeImportText(rawData.nameEn);
   const businessTypeCode = normalizeImportText(rawData.businessType).toUpperCase();
   const contactPhone = normalizeImportText(rawData.contactPhone);
-  const contactName = normalizeImportText(rawData.contactName) || nameZh;
+  const contactName = normalizeImportText(rawData.contactName);
   const province = normalizeImportText(rawData.province);
   const addressZh = normalizeImportText(rawData.addressZh);
   const latitude = parseImportNumber(rawData.latitude);
@@ -3188,8 +3227,8 @@ function extractExceptionMessage(error: BadRequestException) {
 }
 
 function localizeImportExceptionMessage(message: string) {
-  if (message === 'Image file exceeds 5MB') {
-    return '图片文件不能超过 5MB';
+  if (message === 'Image file exceeds 20MB') {
+    return '图片文件不能超过 20MB';
   }
   if (message === 'Invalid image type' || message === 'Invalid image content') {
     return '图片格式无效，仅支持 jpg / jpeg / png / webp';

@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-05",
+  "scope": "platform-admin-design-review-only",
+  "tool": "built-in imagegen",
+  "images": [
+    {
+      "id": "overview",
+      "title": "运营总览",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-0f8fd477-6632-4b25-bdf3-f921ea47da9e.png",
+      "file": "01-overview.png"
+    },
+    {
+      "id": "analytics",
+      "title": "营业分析",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-693eeec9-80f0-485e-9ac6-b2683ae7d8cf.png",
+      "file": "02-analytics.png"
+    },
+    {
+      "id": "merchants",
+      "title": "商家列表与快速查看",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-5a18b3fb-bed7-459a-815f-635cd7704e14.png",
+      "file": "03-merchants.png"
+    },
+    {
+      "id": "merchant-editor",
+      "title": "商家完整编辑与图库",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-b0203055-d87e-4eb7-aeae-e729877b4a74.png",
+      "file": "04-merchant-editor.png"
+    },
+    {
+      "id": "content",
+      "title": "内容运营预览与发布",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-051071d0-1b14-4267-b7eb-b33557383d3a.png",
+      "file": "05-content.png"
+    },
+    {
+      "id": "orders",
+      "title": "订单查询与用户联查",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-cba24ec2-d566-4748-a3c2-c5d7b347f4a9.png",
+      "file": "06-orders.png"
+    },
+    {
+      "id": "reviews",
+      "title": "评价审核",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-d08562df-2291-4f25-aff6-96c68e51fbdd.png",
+      "file": "07-reviews.png"
+    },
+    {
+      "id": "settings",
+      "title": "平台设置与诊断",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-adf27617-1701-4deb-a138-913455996a9d.png",
+      "file": "08-settings.png"
+    },
+    {
+      "id": "tags",
+      "title": "标签库与影响范围",
+      "source": "/Users/peter/.codex/generated_images/01a1a9b6-c8f1-7ce3-909a-800541dce89b/exec-8bc5e8c0-db42-47db-b02e-423952305cea.png",
+      "file": "09-tags.png"
+    }
+  ]
+}

@@ -12,7 +12,6 @@ import {
   UpdateMerchantSignatureDishDto,
 } from './dto/merchant-signature-dish.dto';
 
-const MAX_SIGNATURE_DISHES = 15;
 
 @Injectable()
 export class PlatformMerchantSignatureDishesService {
@@ -30,10 +29,6 @@ export class PlatformMerchantSignatureDishesService {
   async create(merchantId: bigint, dto: CreateMerchantSignatureDishDto) {
     this.assertIndependentSignatureDishWriteAllowed(await this.requireMerchant(merchantId));
     const item = await this.runSerializable(async (tx) => {
-      const count = await tx.merchantSignatureDish.count({ where: { merchantId } });
-      if (count >= MAX_SIGNATURE_DISHES) {
-        throw new BadRequestException(`每个商家最多维护 ${MAX_SIGNATURE_DISHES} 道招牌菜`);
-      }
       const max = await tx.merchantSignatureDish.aggregate({
         where: { merchantId },
         _max: { sortOrder: true },

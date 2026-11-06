@@ -1644,6 +1644,11 @@ function applyLocale(value: Locale) {
 
 applyLocale(locale.value);
 
+// Shared copy only: platform and merchant locale preferences remain independent.
+export const commonInterfaceTranslations: Record<string, [string, string]> = Object.fromEntries(
+  Object.entries(zh).map(([key, value]) => [value, [vi[key as TranslationKey], en[key as TranslationKey]]]),
+);
+
 export function useI18n() {
   const messages = computed(() =>
     locale.value === 'vi' ? vi : locale.value === 'en' ? en : zh,

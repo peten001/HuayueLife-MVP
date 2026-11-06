@@ -64,3 +64,12 @@ describe('PlatformUploadsService merchant image optimization', () => {
     await expect(readFile(join(rootDir, 'public', result.imageUrl.replace(/^\//, '')))).rejects.toThrow();
   });
 });
+
+describe('Platform upload source boundary',()=>{
+ const service=new PlatformUploadsService();
+ it('accepts sources up to 20MB and rejects bytes over the boundary',()=>{
+  const file={buffer:Buffer.alloc(20*1024*1024),mimetype:'image/jpeg',originalname:'source.jpg'};
+  expect(service.validateMerchantImage(file).fileSize).toBe(20*1024*1024);
+  expect(()=>service.validateMerchantImage({...file,buffer:Buffer.alloc(20*1024*1024+1),size:1})).toThrow('20MB');
+ });
+});

@@ -38,13 +38,12 @@ export class PlatformDashboardService {
     ] = await Promise.all([
       this.prisma.order.count({
         where: effectiveOrderWhere({
-          status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: todayStart, lt: tomorrowStart },
         }),
       }),
       this.prisma.order.aggregate({
         where: effectiveOrderWhere({
-          status: { not: OrderStatus.CANCELLED },
+          status: OrderStatus.COMPLETED,
           createdAt: { gte: todayStart, lt: tomorrowStart },
         }),
         _sum: { totalAmountVnd: true },
@@ -52,7 +51,7 @@ export class PlatformDashboardService {
       this.prisma.order.groupBy({
         by: ['merchantId'],
         where: effectiveOrderWhere({
-          status: { not: OrderStatus.CANCELLED },
+          status: OrderStatus.COMPLETED,
           createdAt: { gte: todayStart, lt: tomorrowStart },
         }),
       }),
@@ -88,7 +87,7 @@ export class PlatformDashboardService {
       }),
       this.prisma.order.findMany({
         where: effectiveOrderWhere({
-          status: { not: OrderStatus.CANCELLED },
+          status: OrderStatus.COMPLETED,
           createdAt: { gte: last7Start, lt: tomorrowStart },
         }),
         select: {
@@ -100,7 +99,7 @@ export class PlatformDashboardService {
       this.prisma.order.groupBy({
         by: ['merchantId'],
         where: effectiveOrderWhere({
-          status: { not: OrderStatus.CANCELLED },
+          status: OrderStatus.COMPLETED,
           createdAt: { gte: todayStart, lt: tomorrowStart },
         }),
         _count: { _all: true },

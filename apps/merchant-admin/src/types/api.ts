@@ -221,6 +221,7 @@ export interface PlatformDictionaryItem {
 }
 
 export interface PlatformBusinessType extends PlatformDictionaryItem {
+  contentTemplate?:'RESTAURANT'|'HOTEL'|'SERVICE'|'RETAIL'|'GENERAL';
   level: number;
   path?: string | null;
   showOnHome: boolean;
@@ -639,11 +640,18 @@ export interface PlatformOrdersResponse {
   };
 }
 
+export interface PlatformChartPoint {date:string;orderAmount:string|null;orderCount:number|null}
+
 export interface PlatformAnalyticsResponse {
+  chartTrend?:PlatformChartPoint[];
+  range?: { dateFrom:string;dateTo:string;timeZone:string;includesToday:boolean };
+  previous?: { dateFrom:string;dateTo:string;orderCount:number;orderAmount:string;trend:Array<{date:string;orderCount:number;orderAmount:string}>;chartTrend?:PlatformChartPoint[] };
   summary: {
     orderCount: number;
     orderAmount: string;
     completedOrderCount: number;
+    activeOrderAmount: string;
+    canceledOrderAmount: string;
     canceledOrderCount: number;
     pendingOrderCount: number;
     averageOrderAmount: string | null;
@@ -695,11 +703,14 @@ export interface PlatformAnalyticsFilters {
 }
 
 export interface PlatformOrderFilters {
+  hour?:number;
+  pendingBefore?:string;
   page?: number;
   pageSize?: number;
   dateFrom?: string;
   dateTo?: string;
   merchantKeyword?: string;
+  merchantId?: string;
   city?: string;
   orderType?: OrderType | '';
   status?: OrderStatus | '';
@@ -1070,6 +1081,8 @@ export interface PlatformReviewModerationAction {
   fromStatus: PlatformReviewStatus;
   toStatus: PlatformReviewStatus;
   actorUsername: string;
+  reasonCode?: string | null;
+  reasonNote?: string | null;
   createdAt: string;
 }
 

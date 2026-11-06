@@ -82,13 +82,14 @@ export class PlatformReviewsService {
     };
   }
 
-  async hide(reviewId: bigint, actorUsername: string) {
+  async hide(reviewId: bigint, actorUsername: string, reason: {reasonCode:string;reasonNote?:string} = {reasonCode:'OTHER'}) {
     return this.transition(
       reviewId,
       ReviewStatus.HIDDEN,
       ReviewModerationActionType.HIDE,
       actorUsername,
       [ReviewStatus.PENDING_REVIEW, ReviewStatus.PUBLISHED],
+      reason,
     );
   }
 
@@ -118,6 +119,7 @@ export class PlatformReviewsService {
     action: ReviewModerationActionType,
     actorUsername: string,
     allowedFrom: ReviewStatus[],
+    reason?: {reasonCode:string;reasonNote?:string},
   ) {
     const current = await this.prisma.merchantReview.findUnique({
       where: { id: reviewId },
@@ -140,6 +142,8 @@ export class PlatformReviewsService {
           fromStatus: current.status,
           toStatus,
           actorUsername,
+          reasonCode: reason?.reasonCode ?? null,
+          reasonNote: reason?.reasonNote?.trim() || null,
         },
       }),
     ]);
@@ -222,6 +226,8 @@ export class PlatformReviewsService {
         fromStatus: entry.fromStatus,
         toStatus: entry.toStatus,
         actorUsername: entry.actorUsername,
+        reasonCode: entry.reasonCode,
+        reasonNote: entry.reasonNote,
         createdAt: entry.createdAt.toISOString(),
       })),
     };

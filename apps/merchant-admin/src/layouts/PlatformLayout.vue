@@ -1,259 +1,284 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { clearPlatformAdmin, clearPlatformToken, getPlatformAdmin } from '@/utils/storage';
-
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import MerchantIcon from "@/components/MerchantIcon.vue";
+import PlatformDrawer from "@/components/platform/PlatformDrawer.vue";
+import { usePlatformLocale } from "@/composables/usePlatformLocale";
+import { exploreRequest } from "@/api/platform";
+import { errorMessage } from "@/api/http";
+import {
+  clearPlatformAdmin,
+  clearPlatformToken,
+  getPlatformAdmin,
+} from "@/utils/storage";
 const router = useRouter();
 const route = useRoute();
-const admin = getPlatformAdmin();
-const profileOpen = ref(false);
-
-const nav: Array<{ path: string; label: string; icon: string }> = [
-  { path: '/platform/dashboard', label: '总览', icon: '总' },
-  { path: '/platform/merchants', label: '商家管理', icon: '商' },
-  { path: '/platform/explore', label: '生活分类与专题', icon: '逛' },
-  { path: '/platform/recommendations', label: '首页推荐', icon: '首' },
-  { path: '/platform/orders', label: '订单管理', icon: '单' },
-  { path: '/platform/reviews', label: '评价审核', icon: '评' },
-  { path: '/platform/analytics', label: '营业数据', icon: '数' },
-  { path: '/platform/users', label: '用户管理', icon: '客' },
-  { path: '/platform/settings', label: '系统设置', icon: '设' },
+const { t, locale, setLocale } = usePlatformLocale();
+const adminName = getPlatformAdmin()?.username?.trim() || t("平台管理员");
+const groups = [
+  {
+    label: "",
+    items: [{ path: "dashboard", label: "运营总览", icon: "home" }],
+  },
+  {
+    label: "商家中心",
+    items: [
+      { path: "merchants", label: "商家列表", icon: "store" },
+      { path: "merchants/new", label: "新增与导入", icon: "plus" },
+    ],
+  },
+  {
+    label: "内容运营",
+    items: [
+      { path: "explore", label: "生活分类", icon: "products" },
+      { path: "recommendations", label: "首页推荐", icon: "records" },
+      { path: "promotion-tags", label: "标签库", icon: "filter" },
+    ],
+  },
+  {
+    label: "交易",
+    items: [
+      { path: "orders", label: "订单管理", icon: "orders" },
+      { path: "reviews", label: "评价审核", icon: "edit" },
+    ],
+  },
+  {
+    label: "用户",
+    items: [{ path: "users", label: "用户档案", icon: "user" }],
+  },
+  {
+    label: "数据",
+    items: [{ path: "analytics", label: "营业分析", icon: "home" }],
+  },
+  {
+    label: "系统",
+    items: [
+      { path: "merchant-types", label: "行业与能力", icon: "tables" },
+      { path: "settings", label: "平台设置", icon: "settings" },
+    ],
+  },
 ];
-const merchantEditSections: Array<{ key: string; label: string; danger?: boolean }> = [
-  { key: 'profile', label: '商家资料' },
-  { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '图库与展示内容' },
-  { key: 'tags', label: '标签与推荐' },
-  { key: 'capabilities', label: '能力设置' },
-  { key: 'account', label: '账号与状态' },
-];
-
-const adminName = computed(() => admin?.username?.trim() || '平台管理员');
-const adminInitial = computed(() => adminName.value.trim().charAt(0).toUpperCase() || '平');
-const isMerchantDetailPage = computed(() => route.path.startsWith('/platform/merchants/'));
-const activeMerchantEditSection = computed(() => route.hash.replace('#merchant-section-', '') || 'profile');
-const breadcrumb = computed(() => {
-  const path = route.path;
-  if (path === '/platform/dashboard') return ['主页', '平台总览'];
-  if (path.startsWith('/platform/merchants/')) return ['商家管理', '商家详情'];
-  if (path === '/platform/merchants') return ['商家管理', '商家列表'];
-  if (path === '/platform/merchant-types') return ['系统设置', '商家类型配置'];
-  if (path === '/platform/promotion-tags') return ['系统设置', '标签字典配置'];
-  if (path === '/platform/orders') return ['订单管理', '订单管理'];
-  if (path === '/platform/reviews') return ['评价审核', '评价审核'];
-  if (path === '/platform/analytics') return ['营业数据', '营业数据'];
-  if (path === '/platform/explore') return ['首页内容', '生活分类与场景专题'];
-  if (path === '/platform/recommendations') return ['首页推荐', '首页推荐'];
-  if (path === '/platform/users') return ['用户管理', '用户管理'];
-  if (path === '/platform/settings') return ['系统设置', '系统设置'];
-  return ['主页', '平台总览'];
-});
-
-function isNavActive(path: string) {
-  if (path === '/platform/merchants') {
-    return route.path.startsWith('/platform/merchants');
+const allItems = groups.flatMap((group) => group.items);
+const activeItem = computed(() =>
+  [...allItems]
+    .sort((a, b) => b.path.length - a.path.length)
+    .find(
+      (item) =>
+        route.path === `/platform/${item.path}` ||
+        route.path.startsWith(`/platform/${item.path}/`),
+    ),
+);
+const drawer = ref<"search" | "queue" | "profile" | "">("");
+const query = ref("");
+const busy = ref(false);
+const message = ref("");
+const results = ref<
+  Array<{
+    id: string;
+    label: string;
+    detail: string;
+    path: string;
+    kind: string;
+  }>
+>([]);
+const queue = ref<Array<{ label: string; count: number; path: string }>>([]);
+let requestId = 0;
+watch(
+  () => route.fullPath,
+  () => {
+    drawer.value = "";
+  },
+);
+watch(
+  [() => route.path, locale],
+  () => {
+    document.title = `${t(activeItem.value?.label || "运营总览")} · YunQiao`;
+    document.documentElement.lang =
+      locale.value === "zh" ? "zh-CN" : locale.value;
+  },
+  { immediate: true },
+);
+async function search() {
+  if (query.value.trim().length < 2) return;
+  const id = ++requestId;
+  busy.value = true;
+  message.value = "";
+  try {
+    const data = await exploreRequest<{ items: typeof results.value }>(
+      "get",
+      `/platform/workbench/search?q=${encodeURIComponent(query.value.trim())}`,
+    );
+    if (id === requestId) results.value = data.items;
+  } catch (error) {
+    if (id === requestId) message.value = errorMessage(error);
+  } finally {
+    if (id === requestId) busy.value = false;
   }
-  return route.path === path;
 }
-
+async function openQueue() {
+  drawer.value = "queue";
+  busy.value = true;
+  message.value = "";
+  try {
+    const data = await exploreRequest<{ items: typeof queue.value }>(
+      "get",
+      "/platform/workbench/queue",
+    );
+    queue.value = data.items;
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    busy.value = false;
+  }
+}
 async function logout() {
   clearPlatformToken();
   clearPlatformAdmin();
-  profileOpen.value = false;
-  await router.push('/platform/login');
+  await router.push("/platform/login");
 }
 </script>
-
 <template>
-  <div class="app-shell platform-shell">
+  <div class="app-shell platform-shell p-workbench">
     <aside class="sidebar platform-sidebar">
-      <div class="platform-branding">
-        <span class="platform-brand-mark" aria-hidden="true">云</span>
-        <div class="platform-brand-main">云桥 Life 平台后台</div>
-        <div class="platform-brand-sub">平台运营中心</div>
-      </div>
-
-      <nav class="platform-nav">
-        <template v-for="item in nav" :key="item.path">
+      <RouterLink class="p-brand" to="/platform/dashboard" aria-label="YunQiao"
+        ><img src="/yunqiao-mark.png" alt="" /><span>YunQiao</span></RouterLink
+      >
+      <nav class="p-nav" aria-label="平台导航">
+        <section v-for="group in groups" :key="group.label" class="p-nav-group">
+          <p v-if="group.label" class="p-nav-label">{{ t(group.label) }}</p>
           <RouterLink
-            :to="item.path"
-            class="platform-nav-item"
-            :class="{ active: isNavActive(item.path) }"
+            v-for="item in group.items"
+            :key="item.path"
+            :to="`/platform/${item.path}`"
+            class="p-nav-link"
+            :class="{ active: activeItem?.path === item.path }"
+            :aria-current="activeItem?.path === item.path ? 'page' : undefined"
           >
-            <span class="platform-nav-icon" aria-hidden="true">{{ item.icon }}</span>
-            <span>{{ item.label }}</span>
+            <MerchantIcon :name="item.icon" /><span>{{ t(item.label) }}</span>
           </RouterLink>
-
-          <div v-if="item.path === '/platform/merchants' && isMerchantDetailPage" class="platform-sub-nav">
-            <RouterLink
-              v-for="section in merchantEditSections"
-              :key="section.key"
-              :to="{ path: route.path, hash: `#merchant-section-${section.key}` }"
-              class="platform-sub-nav-item"
-              :class="{
-                'is-active': activeMerchantEditSection === section.key,
-                'is-danger': section.danger,
-              }"
-            >
-              {{ section.label }}
-            </RouterLink>
-          </div>
-        </template>
+        </section>
       </nav>
-
-      <button class="platform-profile-entry" type="button" @click="profileOpen = true">
-        <span class="platform-profile-entry-icon" aria-hidden="true">☺</span>
-        <span class="platform-profile-entry-text">
-          <strong>个人中心</strong>
-          <small>{{ adminName }}</small>
-        </span>
+      <button class="p-profile" @click="drawer = 'profile'">
+        <span class="p-avatar">{{ adminName.charAt(0).toUpperCase() }}</span
+        ><span
+          ><strong>{{ adminName }}</strong
+          ><small>{{ t("平台管理员") }}</small></span
+        ><MerchantIcon name="ellipsis" />
       </button>
     </aside>
-
     <main class="content platform-content">
       <header class="platform-topbar">
-        <div class="platform-topbar-left">
-          <div class="platform-breadcrumb">
-            <span>云桥 Life 平台后台</span>
-            <span aria-hidden="true">/</span>
-            <strong>{{ breadcrumb[1] }}</strong>
-          </div>
+        <div class="p-breadcrumb">
+          <span>YunQiao</span><span aria-hidden="true">/</span
+          ><strong>{{ t(activeItem?.label || "运营总览") }}</strong>
         </div>
-
-        <div class="platform-topbar-actions">
-          <label class="platform-search" aria-label="全局搜索">
-            <span class="platform-topbar-icon" aria-hidden="true">⌕</span>
-            <input type="text" placeholder="搜索商家、订单、用户…" readonly />
-          </label>
-
-          <button class="platform-icon-button" type="button" aria-label="通知">
-            <span aria-hidden="true">◉</span>
+        <div class="p-top-actions">
+          <button
+            class="p-search-trigger"
+            :aria-label="t('搜索商家、订单、用户')"
+            @click="drawer = 'search'"
+          >
+            <MerchantIcon name="search" /><span>{{
+              t("搜索商家、订单、用户")
+            }}</span>
           </button>
-          <button class="platform-icon-button" type="button" aria-label="语言">
-            <span aria-hidden="true">◫</span>
+          <button
+            class="p-icon-button"
+            :aria-label="t('待处理事项')"
+            @click="openQueue"
+          >
+            <MerchantIcon name="records" />
           </button>
-
-          <div class="platform-admin-chip">
-            <span class="platform-admin-chip-name">{{ adminName }}</span>
-            <span class="platform-admin-avatar">{{ adminInitial }}</span>
-          </div>
+          <label class="p-locale"
+            ><MerchantIcon name="language" /><select
+              :value="locale"
+              aria-label="Language"
+              @change="
+                setLocale(
+                  ($event.target as HTMLSelectElement).value as
+                    | 'zh'
+                    | 'vi'
+                    | 'en',
+                )
+              "
+            >
+              <option value="zh">中文</option>
+              <option value="vi">Tiếng Việt</option>
+              <option value="en">English</option>
+            </select></label
+          >
         </div>
       </header>
-
       <section class="platform-page-body">
-        <RouterView />
+        <RouterView v-slot="{ Component }"
+          ><Transition name="p-page" mode="out-in"
+            ><component :is="Component" :key="route.path" /></Transition
+        ></RouterView>
       </section>
     </main>
-
-    <Teleport to="body">
-      <div v-if="profileOpen" class="platform-modal-mask" @click.self="profileOpen = false">
-        <div class="platform-modal">
-          <div class="platform-modal-header">
-            <div>
-              <h2>个人中心</h2>
-              <p>当前平台管理员信息</p>
-            </div>
-            <button class="platform-icon-button" type="button" aria-label="关闭" @click="profileOpen = false">
-              <span aria-hidden="true">✕</span>
-            </button>
-          </div>
-
-          <div class="platform-profile-card">
-            <div class="platform-profile-row">
-              <span>当前账号</span>
-              <strong>{{ adminName }}</strong>
-            </div>
-            <div class="platform-profile-row">
-              <span>账号来源</span>
-              <strong>服务器环境变量配置</strong>
-            </div>
-          </div>
-
-          <p class="platform-profile-note">
-            当前平台管理员由服务器配置，暂不支持在线修改账号和密码。
-          </p>
-
-          <div class="platform-modal-footer">
-            <button class="secondary" type="button" @click="profileOpen = false">关闭</button>
-            <button type="button" @click="logout">退出登录</button>
-          </div>
+    <PlatformDrawer
+      :open="!!drawer"
+      :title="
+        t(
+          drawer === 'search'
+            ? '搜索结果'
+            : drawer === 'queue'
+              ? '待处理事项'
+              : '个人中心',
+        )
+      "
+      @close="drawer = ''"
+    >
+      <template v-if="drawer === 'search'">
+        <form class="p-search-form" @submit.prevent="search">
+          <input
+            v-model="query"
+            autofocus
+            :placeholder="t('搜索商家、订单、用户')"
+            minlength="2"
+            maxlength="120"
+          /><button :disabled="busy || query.trim().length < 2">
+            {{ t("搜索") }}
+          </button>
+        </form>
+        <p class="hint">{{ t("请输入至少两个字") }}</p>
+        <RouterLink
+          v-for="item in results"
+          :key="`${item.kind}-${item.id}`"
+          class="p-result"
+          :to="item.path"
+          ><span
+            ><small>{{ t(item.kind) }}</small
+            ><strong>{{ item.label }}</strong
+            ><small>{{ item.detail }}</small></span
+          ><MerchantIcon name="chevron-right"
+        /></RouterLink>
+        <p v-if="!busy && !results.length && query" class="empty-state">
+          {{ t("暂无匹配结果") }}
+        </p>
+      </template>
+      <template v-else-if="drawer === 'queue'"
+        ><RouterLink
+          v-for="item in queue"
+          :key="item.path"
+          :to="item.path"
+          class="p-result"
+          ><span>{{ t(item.label) }}</span
+          ><strong>{{ item.count }}</strong
+          ><MerchantIcon name="chevron-right" /></RouterLink
+      ></template>
+      <template v-else
+        ><div class="p-account">
+          <span class="p-avatar">{{ adminName.charAt(0).toUpperCase() }}</span>
+          <h3>{{ adminName }}</h3>
+          <p>{{ t("平台管理员") }}</p>
         </div>
-      </div>
-    </Teleport>
+        <button class="secondary" @click="logout">
+          <MerchantIcon name="logout" />{{ t("退出登录") }}
+        </button></template
+      >
+      <p v-if="busy" role="status" class="hint">{{ t("加载中…") }}</p>
+      <p v-if="message" role="alert" class="error">{{ message }}</p>
+    </PlatformDrawer>
   </div>
 </template>
-
-<style scoped>
-.platform-sidebar {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.platform-sub-nav {
-  display: grid;
-  gap: 4px;
-  margin: 6px 0 8px 38px;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item,
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-active,
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-exact-active {
-  display: flex;
-  align-items: center;
-  width: auto;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: transparent;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  box-shadow: none;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item:hover {
-  background: #f3fbf5;
-  color: #15803d;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-active {
-  background: #e8f7ec;
-  color: #15803d;
-  font-weight: 700;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger,
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.router-link-active,
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.router-link-exact-active {
-  background: transparent;
-  color: #dc2626;
-  font-weight: 600;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger:hover {
-  background: #fff1f2;
-  color: #dc2626;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.is-active {
-  background: #fff1f2;
-  color: #dc2626;
-  font-weight: 700;
-}
-
-.platform-sidebar .platform-sub-nav .platform-sub-nav-item:focus-visible {
-  outline: 3px solid rgb(67 160 71 / 24%);
-  outline-offset: 2px;
-}
-
-@media (max-width: 760px) {
-  .platform-sidebar .platform-sub-nav .platform-sub-nav-item,
-  .platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-active,
-  .platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-exact-active {
-    min-height: 44px;
-    height: auto;
-  }
-}
-</style>

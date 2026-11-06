@@ -1,0 +1,79 @@
+[
+  {
+    "file": "01-settings-v2.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1658324,
+    "sha256": "645fb612253454d338d890733910d246dfe7279c43374751a434ae6f570a41d2"
+  },
+  {
+    "file": "02-merchant-capabilities.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1646025,
+    "sha256": "af3509b651739719ef1dd2b756467fc827963d9ddf90674bde842072ad044975"
+  },
+  {
+    "file": "03-import.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1626834,
+    "sha256": "127058ea566218c86299831451d06ef8c5387cd83731bcce3723c9c0a8d6aec6"
+  },
+  {
+    "file": "04-merchant-profile.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1654607,
+    "sha256": "029b5106254568bfaae21ec5f9da6245a70c29ed4db63b44f1d2a3e8397f10e2"
+  },
+  {
+    "file": "05-users.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1605792,
+    "sha256": "db3153a298e171152e3428866201b4b5bf7978f837707799ba1366e46c5e9cd7"
+  },
+  {
+    "file": "06-categories.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1705477,
+    "sha256": "b89741a87a4b30ed1fa41334db94a7f724b8ba7ccdb2c9647393973b9ec7e9d9"
+  },
+  {
+    "file": "07-industries.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1617869,
+    "sha256": "50e1cd1fa9451c70e95e6f2860c7c77d8926546a172db5155d12f225f97dff50"
+  },
+  {
+    "file": "08-tag-editor.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1686560,
+    "sha256": "03f493cccfd61c6d1eaf2b91fc868803c30b77a0b1df8b237132ec420aade360"
+  },
+  {
+    "file": "09-login.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1415988,
+    "sha256": "8fb2733be3a2221811cc26b22831403f5b086d8294388a1a4acf5809da60a4cf"
+  },
+  {
+    "file": "10-gallery-v2.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1873383,
+    "sha256": "6089a234ba81952043bf0081c082a2c4e499aaaa0566c667a2702f05a93bfa15"
+  },
+  {
+    "file": "11-recycle.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1564653,
+    "sha256": "65c2c125f0fdebb0b47dac4bcf295670b368a10370da1b1d0244c638dcb4513e"
+  }
+]

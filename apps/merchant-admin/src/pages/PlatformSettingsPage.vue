@@ -1,178 +1,210 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
-import PageHeader from '@/components/PageHeader.vue';
-import { getPlatformAdmin } from '@/utils/storage';
-
-const router = useRouter();
-const admin = getPlatformAdmin();
-
-function goRecommendations() {
-  router.push('/platform/recommendations');
+import { onMounted, ref } from "vue";
+import PageHeader from "@/components/PageHeader.vue";
+import {
+  exploreRequest,
+  getPlatformSettings,
+  updatePlatformSettings,
+} from "@/api/platform";
+import type { PlatformSettings } from "@/types/api";
+import { errorMessage } from "@/api/http";
+import { vietnamTime } from "@/utils/platform-format";
+const settings = ref<PlatformSettings>();
+const saving = ref(false);
+const message = ref("");
+const checking = ref(false);
+const health = ref<{ api: string; database: string; checkedAt: string }>();
+const diagnosticError = ref("");
+async function load() {
+  try {
+    settings.value = await getPlatformSettings();
+  } catch (e) {
+    message.value = errorMessage(e);
+  }
 }
-
-function goOrders() {
-  router.push('/platform/orders');
+async function toggle() {
+  if (!settings.value || saving.value || settings.value.readOnly) return;
+  saving.value = true;
+  message.value = "";
+  try {
+    settings.value = await updatePlatformSettings({
+      platformOrderingEnabled: !settings.value.platformOrderingEnabled,
+    });
+    message.value = settings.value.platformOrderingEnabled
+      ? "已开启平台经营能力，三项功能按各商家原有配置恢复。"
+      : "已关闭全平台扫码点餐、到店自取和商家配送，商家原有配置已保留。";
+  } catch (e) {
+    message.value = errorMessage(e);
+  } finally {
+    saving.value = false;
+  }
 }
-
-function goBusinessTypes() {
-  router.push('/platform/merchant-types');
+async function check() {
+  checking.value = true;
+  diagnosticError.value = "";
+  try {
+    health.value = await exploreRequest("get", "/platform/workbench/health");
+  } catch (e) {
+    health.value = undefined;
+    diagnosticError.value = errorMessage(e);
+  } finally {
+    checking.value = false;
+  }
 }
-
-function goPromotionTags() {
-  router.push('/platform/promotion-tags');
-}
+onMounted(load);
 </script>
-
 <template>
   <section>
     <PageHeader
-      title="系统设置"
-      description="查看平台基础配置、运营规则和数据统计口径"
+      :title="$pt('平台设置')"
+      :description="$pt('管理平台经营总控，查看诊断结果与统一规则。')"
     />
-
-    <section class="platform-settings-grid">
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>平台基础信息</h2>
-          <span class="badge success">运行中</span>
-        </div>
-        <dl class="detail-list settings-detail-list">
-          <dt>平台名称</dt><dd>云桥 Life</dd>
-          <dt>业务模式</dt><dd>到店扫码点餐 / 到店自取 / 商家配送</dd>
-          <dt>当前版本</dt><dd>MVP</dd>
-          <dt>运营区域</dt><dd>北江 / 北宁</dd>
-          <dt>平台状态</dt><dd>运行中</dd>
-        </dl>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>首页推荐规则</h2>
-          <button class="secondary small" @click="goRecommendations">前往首页推荐</button>
-        </div>
-        <div class="settings-rule-list">
-          <div>
-            <strong>热门推荐 HOT_FOOD</strong>
-            <p>当前日常运营主用推荐标签</p>
+    <p v-if="message" class="p-status-note" role="status">{{ $pt(message) }}</p>
+    <div class="p-split">
+      <div>
+        <article class="card">
+          <div class="section-heading">
+            <h2>{{ $pt("平台经营总开关") }}</h2>
+            <span
+              class="badge"
+              :class="settings?.platformOrderingEnabled ? 'success' : 'muted'"
+              >{{
+                settings
+                  ? settings.platformOrderingEnabled
+                    ? $pt("已开启")
+                    : $pt("已关闭")
+                  : $pt("未读取")
+              }}</span
+            >
           </div>
-          <div>
-            <strong>中式正餐</strong>
-            <p>商家首页分类 chinese_dining</p>
+          <p class="p-settings-copy">
+            {{ $pt("一键控制全平台所有商家的扫码点餐、到店自取和商家配送。") }}
+          </p>
+          <ul class="p-ordering-scope" :aria-label="$pt('总开关控制范围')">
+            <li
+              v-for="capability in ['扫码点餐', '到店自取', '商家配送']"
+              :key="capability"
+            >
+              <strong>{{ $pt(capability) }}</strong>
+              <span>{{
+                $pt(
+                  settings
+                    ? settings.platformOrderingEnabled
+                      ? "随商家设置开放"
+                      : "平台已关闭"
+                    : "未读取",
+                )
+              }}</span>
+            </li>
+          </ul>
+          <div class="p-settings-switch">
+            <span
+              ><strong>{{ $pt("全平台经营能力") }}</strong
+              ><small>{{
+                $pt("关闭后，以上三项功能在全平台统一停用")
+              }}</small></span
+            ><button
+              role="switch"
+              :aria-checked="!!settings?.platformOrderingEnabled"
+              :disabled="!settings || saving || settings.readOnly"
+              :aria-label="$pt('平台经营总开关')"
+              @click="toggle"
+            >
+              {{
+                $pt(
+                  saving
+                    ? "正在保存…"
+                    : !settings
+                      ? "加载中…"
+                      : settings.platformOrderingEnabled
+                        ? "一键关闭经营能力"
+                        : "一键开启经营能力",
+                )
+              }}
+            </button>
           </div>
-          <div>
-            <strong>粉面小吃</strong>
-            <p>商家首页分类 noodles_snacks</p>
+          <p class="p-status-note">
+            {{
+              $pt(
+                "总开关关闭时保留每家商家的原有配置，重新开启后按原配置恢复。",
+              )
+            }}
+          </p>
+          <RouterLink to="/platform/merchants">{{
+            $pt("前往商家能力设置 →")
+          }}</RouterLink>
+        </article>
+        <article class="card">
+          <h2>{{ $pt("统计与资料规则") }}</h2>
+          <dl class="detail-list">
+            <dt>{{ $pt("统计时区") }}</dt>
+            <dd>{{ $pt("越南时间 · UTC+7") }}</dd>
+            <dt>{{ $pt("主要金额指标") }}</dt>
+            <dd>{{ $pt("已完成订单额，按订单记录与下单日期统计") }}</dd>
+            <dt>{{ $pt("下单数") }}</dt>
+            <dd>{{ $pt("含取消订单，排除作废单；进行中与取消金额另列") }}</dd>
+            <dt>{{ $pt("商家公开资料") }}</dt>
+            <dd>{{ $pt("中越双语与行业清单齐全后发布，英文选填") }}</dd>
+            <dt>{{ $pt("图片处理") }}</dt>
+            <dd>
+              {{
+                $pt("每张源图最多 20MB，自动优化，不永久保留原图；相册不限张数")
+              }}
+            </dd>
+          </dl>
+        </article>
+      </div>
+      <div>
+        <article class="card">
+          <div class="section-heading">
+            <h2>{{ $pt("运行诊断") }}</h2>
+            <button class="secondary small" :disabled="checking" @click="check">
+              {{ checking ? $pt("正在检测…") : $pt("立即检测") }}
+            </button>
           </div>
-          <div>
-            <strong>咖啡奶茶</strong>
-            <p>商家首页分类 coffee_milk_tea</p>
-          </div>
-        </div>
-        <p class="hint">
-          如需调整首页推荐或分类入口，请前往“首页推荐”或“商家管理”。
-        </p>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>高级配置</h2>
-          <span class="badge muted">系统配置</span>
-        </div>
-        <div class="settings-rule-list">
-          <div>
-            <strong>商家类型配置</strong>
-            <p>管理平台可选经营类型和默认能力</p>
-          </div>
-          <div>
-            <strong>标签字典配置</strong>
-            <p>分别管理平台运营、菜系与场景标签</p>
-          </div>
-        </div>
-        <div class="settings-reserve-actions">
-          <button class="secondary" @click="goBusinessTypes">商家类型配置</button>
-          <button class="secondary" @click="goPromotionTags">标签字典配置</button>
-        </div>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>订单规则说明</h2>
-          <span class="badge muted">说明</span>
-        </div>
-        <div class="settings-rule-list">
-          <div>
-            <strong>支持订单类型</strong>
-            <p>到店扫码点餐 / 到店自取 / 商家配送</p>
-          </div>
-          <div>
-            <strong>当前订单金额口径</strong>
-            <p>订单金额 = 用户下单时的商品金额 + 配送费等订单字段合计</p>
-          </div>
-        </div>
-        <p class="hint">当前未接在线支付，订单金额不等于在线支付金额。</p>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>数据统计口径</h2>
-          <button class="secondary small" @click="goOrders">前往订单管理</button>
-        </div>
-        <div class="settings-rule-list">
-          <div><strong>今日订单</strong><p>按服务器日期统计今日订单数量</p></div>
-          <div><strong>今日订单金额</strong><p>今日订单 totalAmount 合计</p></div>
-          <div><strong>近 7 日订单</strong><p>最近 7 天订单数量</p></div>
-          <div><strong>完成率</strong><p>已完成订单 / 非取消订单</p></div>
-          <div><strong>取消率</strong><p>已取消订单 / 总订单数</p></div>
-          <div><strong>客单价</strong><p>订单金额 / 订单数</p></div>
-        </div>
-        <p class="hint">数据用于运营参考，如需核对，请前往“订单管理”。</p>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>平台管理员</h2>
-          <span class="badge success">已登录</span>
-        </div>
-        <dl class="detail-list settings-detail-list">
-          <dt>账号名称</dt><dd>{{ admin?.username || '当前平台管理员' }}</dd>
-          <dt>登录来源</dt><dd>平台后台本地会话</dd>
-          <dt>权限范围</dt><dd>平台运营管理</dd>
-        </dl>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>系统状态</h2>
-          <span class="badge success">说明</span>
-        </div>
-        <div class="settings-rule-list">
-          <div><strong>API 服务</strong><p>运行中</p></div>
-          <div><strong>后台前端</strong><p>运行中</p></div>
-          <div><strong>数据来源</strong><p>真实订单 / 商家 / 用户数据</p></div>
-          <div><strong>支付状态</strong><p>未接入在线支付</p></div>
-          <div><strong>小程序状态</strong><p>已接入基础点餐流程</p></div>
-        </div>
-      </article>
-
-      <article class="card platform-settings-card">
-        <div class="section-heading">
-          <h2>后续配置预留</h2>
-          <span class="badge muted">后续开放</span>
-        </div>
-        <div class="settings-reserve-list">
-          <span>平台公告</span>
-          <span>默认配送提示</span>
-          <span>城市运营配置</span>
-          <span>商家审核开关</span>
-          <span>数据导出</span>
-          <span>管理员权限</span>
-        </div>
-        <div class="settings-reserve-actions">
-          <button class="secondary" disabled>后续开放</button>
-          <button class="secondary" disabled>后续开放</button>
-          <button class="secondary" disabled>后续开放</button>
-        </div>
-      </article>
-    </section>
+          <p class="hint">{{ $pt("检测结果仅代表本次请求时刻。") }}</p>
+          <dl class="detail-list">
+            <dt>{{ $pt("API 连通性") }}</dt>
+            <dd>
+              <span class="badge" :class="health ? 'success' : 'muted'">{{
+                health
+                  ? $pt("正常")
+                  : diagnosticError
+                    ? $pt("检测失败")
+                    : $pt("尚未检测")
+              }}</span>
+            </dd>
+            <dt>{{ $pt("数据库连接") }}</dt>
+            <dd>
+              <span class="badge" :class="health ? 'success' : 'muted'">{{
+                health
+                  ? $pt("正常")
+                  : diagnosticError
+                    ? $pt("无法确认")
+                    : $pt("尚未检测")
+              }}</span>
+            </dd>
+            <dt>{{ $pt("检测时间") }}</dt>
+            <dd>{{ health ? vietnamTime(health.checkedAt) : "—" }}</dd>
+          </dl>
+          <p v-if="diagnosticError" class="error" role="alert">
+            {{ diagnosticError }}
+          </p>
+        </article>
+        <article class="card">
+          <h2>{{ $pt("管理入口") }}</h2>
+          <RouterLink class="p-result" to="/platform/merchant-types"
+            ><span>{{ $pt("行业与默认能力") }}</span
+            ><span>→</span></RouterLink
+          ><RouterLink class="p-result" to="/platform/promotion-tags"
+            ><span>{{ $pt("公共标签库") }}</span
+            ><span>→</span></RouterLink
+          ><RouterLink class="p-result" to="/platform/merchants/trash"
+            ><span>{{ $pt("商家回收站") }}</span
+            ><span>→</span></RouterLink
+          >
+        </article>
+      </div>
+    </div>
   </section>
 </template>

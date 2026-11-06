@@ -1,0 +1,763 @@
+{
+  "source": "Isolated local fixtures, no production connection",
+  "views": [
+    {
+      "path": "dashboard",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "运营总览",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "analytics",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "营业分析",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家列表",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants/new",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "新增商家",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants/import",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "批量导入商家",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants/1",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家资料",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants/1/operations",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "经营能力与账号",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchants/trash",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家回收站",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "explore",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "生活分类",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "explore/categories/food",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "编辑生活分类",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "explore/topics/after-work",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "编辑场景专题",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "recommendations",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "首页推荐",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "promotion-tags",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "标签库",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "promotion-tags/1",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "编辑标签",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "orders",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "订单管理",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "reviews",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "评价审核",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "users",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "用户管理",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "settings",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "平台设置",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchant-types",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家类型管理",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchant-types/new",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家类型管理",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "merchant-types/1",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "heading": "商家类型管理",
+      "activeBackground": "rgb(237, 242, 252)",
+      "brandBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "path": "login"
+    }
+  ],
+  "checks": [
+    "Independent platform language switch and persistence",
+    "Ranking opens orders with exact merchant/date/status scope",
+    "Order quick view opens and closes by keyboard",
+    "Explicit all-results selection uses a fixed server snapshot",
+    "Merchant directory server pagination and quick view",
+    "Tag edit saves a draft, preview precedes unified publication",
+    "Single master switch turns QR ordering, pickup and merchant delivery off platform-wide and restores saved merchant configuration",
+    "Review hiding sends selected reason and optional note",
+    "Recycle bin recovery leaves merchant hidden",
+    "Draft creation needs only merchant name and city",
+    "50 gallery photos, failed upload retry and no album count cap",
+    "Photo replacement preserves metadata; cover crop and signature item persist only in draft",
+    "Industry-specific room display items save with inquiry pricing",
+    "Claimed merchant retains independent display drafts while its public menu stays merchant-managed",
+    "All 21 authenticated views fit 1280px in English and Vietnamese"
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/selection",
+      "body": "{\"businessTypeId\":\"\",\"claimStatus\":\"\",\"merchantMode\":\"\",\"popular\":\"\",\"region\":\"\",\"district\":\"\",\"keyword\":\"\",\"city\":\"\",\"status\":\"\",\"view\":\"\",\"page\":1,\"pageSize\":20}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/bulk",
+      "body": "{\"token\":\"LOCAL_SELECTION\",\"action\":\"hide\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/content/draft",
+      "body": "{\"categories\":[{\"code\":\"food\",\"nameZh\":\"美食餐饮\",\"nameVi\":\"Ẩm thực\",\"nameEn\":\"Dining\",\"iconKey\":\"food\",\"sortOrder\":10,\"enabled\":true,\"businessTypeCodes\":[\"CHINESE_RESTAURANT\"],\"legacyKeys\":[\"chinese_dining\"]}],\"topics\":[{\"code\":\"after-work\",\"nameZh\":\"下班放松一下\",\"nameVi\":\"Thư giãn sau giờ làm\",\"subtitleZh\":\"探索附近好店\",\"enabled\":false,\"regions\":[],\"sortOrder\":1}],\"tags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好 · 本地草稿\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false},{\"id\":\"2\",\"code\":\"SICHUAN\",\"nameZh\":\"川菜\",\"nameVi\":\"Ẩm thực Tứ Xuyên\",\"scope\":\"CUISINE\",\"color\":\"#416bd8\",\"enabled\":true,\"sortOrder\":1,\"merchantReferenceCount\":6,\"reserved\":false},{\"id\":\"3\",\"code\":\"HOT_FOOD\",\"nameZh\":\"热门推荐\",\"nameVi\":\"Đề xuất nổi bật\",\"scope\":\"OPERATIONAL\",\"color\":\"#288f95\",\"enabled\":true,\"sortOrder\":2,\"merchantReferenceCount\":4,\"reserved\":true}],\"recommendations\":[{\"merchantId\":\"1\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"2\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"3\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"4\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"5\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"6\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"7\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"8\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"9\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"10\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"11\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"12\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"13\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"14\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"15\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"16\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"17\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"18\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"19\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"20\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"21\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"22\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"23\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"24\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"25\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"26\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]}],\"version\":0,\"baseRevision\":\"LOCAL_CONTENT\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/content/preview",
+      "body": "{\"draft\":{\"categories\":[{\"code\":\"food\",\"nameZh\":\"美食餐饮\",\"nameVi\":\"Ẩm thực\",\"nameEn\":\"Dining\",\"iconKey\":\"food\",\"sortOrder\":10,\"enabled\":true,\"businessTypeCodes\":[\"CHINESE_RESTAURANT\"],\"legacyKeys\":[\"chinese_dining\"]}],\"topics\":[{\"code\":\"after-work\",\"nameZh\":\"下班放松一下\",\"nameVi\":\"Thư giãn sau giờ làm\",\"subtitleZh\":\"探索附近好店\",\"enabled\":false,\"regions\":[],\"sortOrder\":1}],\"tags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好 · 本地草稿\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false},{\"id\":\"2\",\"code\":\"SICHUAN\",\"nameZh\":\"川菜\",\"nameVi\":\"Ẩm thực Tứ Xuyên\",\"scope\":\"CUISINE\",\"color\":\"#416bd8\",\"enabled\":true,\"sortOrder\":1,\"merchantReferenceCount\":6,\"reserved\":false},{\"id\":\"3\",\"code\":\"HOT_FOOD\",\"nameZh\":\"热门推荐\",\"nameVi\":\"Đề xuất nổi bật\",\"scope\":\"OPERATIONAL\",\"color\":\"#288f95\",\"enabled\":true,\"sortOrder\":2,\"merchantReferenceCount\":4,\"reserved\":true}],\"recommendations\":[{\"merchantId\":\"1\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"2\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"3\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"4\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"5\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"6\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"7\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"8\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"9\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"10\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"11\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"12\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"13\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"14\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"15\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"16\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"17\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"18\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"19\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"20\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"21\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"22\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"23\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"24\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"25\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"26\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]}],\"version\":1,\"baseRevision\":\"LOCAL_CONTENT\"},\"city\":\"北宁\",\"at\":\"2026-11-06T05:00:00.000Z\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/content/publish",
+      "body": "{\"categories\":[{\"code\":\"food\",\"nameZh\":\"美食餐饮\",\"nameVi\":\"Ẩm thực\",\"nameEn\":\"Dining\",\"iconKey\":\"food\",\"sortOrder\":10,\"enabled\":true,\"businessTypeCodes\":[\"CHINESE_RESTAURANT\"],\"legacyKeys\":[\"chinese_dining\"]}],\"topics\":[{\"code\":\"after-work\",\"nameZh\":\"下班放松一下\",\"nameVi\":\"Thư giãn sau giờ làm\",\"subtitleZh\":\"探索附近好店\",\"enabled\":false,\"regions\":[],\"sortOrder\":1}],\"tags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好 · 本地草稿\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false},{\"id\":\"2\",\"code\":\"SICHUAN\",\"nameZh\":\"川菜\",\"nameVi\":\"Ẩm thực Tứ Xuyên\",\"scope\":\"CUISINE\",\"color\":\"#416bd8\",\"enabled\":true,\"sortOrder\":1,\"merchantReferenceCount\":6,\"reserved\":false},{\"id\":\"3\",\"code\":\"HOT_FOOD\",\"nameZh\":\"热门推荐\",\"nameVi\":\"Đề xuất nổi bật\",\"scope\":\"OPERATIONAL\",\"color\":\"#288f95\",\"enabled\":true,\"sortOrder\":2,\"merchantReferenceCount\":4,\"reserved\":true}],\"recommendations\":[{\"merchantId\":\"1\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"2\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"3\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"4\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"5\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"6\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"7\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"8\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"9\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"10\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"11\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"12\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"13\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"14\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"15\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"16\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"17\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"18\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"19\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"20\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"21\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"22\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"23\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"24\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"25\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]},{\"merchantId\":\"26\",\"manualPopular\":false,\"homepageCategoryKeys\":[\"chinese_dining\"]}],\"version\":1,\"baseRevision\":\"LOCAL_CONTENT\",\"previewToken\":\"LOCAL_PREVIEW\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/settings",
+      "body": "{\"platformOrderingEnabled\":false}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/settings",
+      "body": "{\"platformOrderingEnabled\":true}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/reviews/1/hide",
+      "body": "{\"reasonCode\":\"PRIVACY\",\"reasonNote\":\"本地测试原因\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/trash/99/restore",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/merchant-drafts",
+      "body": "{\"nameZh\":\"仅有店名的本地草稿\",\"city\":\"北宁\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/uploads/merchant-image",
+      "body": "[multipart upload]"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/merchants/1/draft",
+      "body": "{\"profile\":{\"id\":\"1\",\"nameZh\":\"本地验收 · 迎客餐厅\",\"nameVi\":\"Nhà hàng thử nghiệm\",\"city\":\"北江\",\"province\":\"北江\",\"contactName\":\"本地验收联系人\",\"contactPhone\":\"0900000000\",\"addressZh\":\"本地示例地址\",\"addressVi\":\"Địa chỉ thử nghiệm\",\"descriptionZh\":\"本地隔离示例，不是线上商家\",\"descriptionVi\":\"Dữ liệu thử nghiệm nội bộ\",\"latitude\":\"21.1861\",\"longitude\":\"106.0763\",\"coverUrl\":\"/uploads/platform-preview-53.png\",\"businessType\":{\"id\":\"1\",\"code\":\"CHINESE_RESTAURANT\",\"nameZh\":\"中式餐饮\",\"nameVi\":\"Ẩm thực Trung Hoa\",\"nameEn\":\"Chinese dining\",\"enabled\":true,\"parentId\":null,\"level\":1,\"sortOrder\":10,\"showOnHome\":true,\"defaultMerchantMode\":\"DISPLAY\",\"defaultCapabilities\":{}},\"businessTypeId\":\"1\",\"status\":\"ACTIVE\",\"isVisibleOnClient\":true,\"claimStatus\":\"UNCLAIMED\",\"updatedAt\":\"2026-11-05T04:20:00.000Z\",\"createdAt\":\"2026-11-05T04:20:00.000Z\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"],\"images\":[],\"capabilities\":[{\"id\":\"1\",\"code\":\"phoneEnabled\",\"nameZh\":\"联系电话\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":0,\"isEnabled\":true},{\"id\":\"2\",\"code\":\"navigationEnabled\",\"nameZh\":\"地图导航\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":1,\"isEnabled\":true},{\"id\":\"3\",\"code\":\"imageGalleryEnabled\",\"nameZh\":\"图片相册\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":2,\"isEnabled\":true},{\"id\":\"4\",\"code\":\"dineInEnabled\",\"nameZh\":\"堂食\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":3,\"isEnabled\":false},{\"id\":\"5\",\"code\":\"pickupEnabled\",\"nameZh\":\"到店自取\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":4,\"isEnabled\":false},{\"id\":\"6\",\"code\":\"deliveryEnabled\",\"nameZh\":\"商家配送\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":5,\"isEnabled\":false},{\"id\":\"7\",\"code\":\"qrOrderEnabled\",\"nameZh\":\"扫码点餐\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":6,\"isEnabled\":false},{\"id\":\"8\",\"code\":\"printerEnabled\",\"nameZh\":\"打印机\",\"groupCode\":\"PRINTING\",\"groupNameZh\":\"打印能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":7,\"isEnabled\":false}],\"missing\":[\"封面\",\"菜单或菜品\"],\"openingHoursText\":\"09:00-22:00\",\"businessHours\":{\"monday\":[\"09:00-22:00\"]},\"merchantMode\":\"DISPLAY\",\"account\":\"\",\"phone\":\"0900000000\",\"isActive\":true,\"profileCompletion\":75,\"promotionTags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false}]},\"images\":[{\"clientKey\":\"c021026b-23e2-4779-ac55-e0e26cd99126\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-52.png\",\"titleZh\":\"保留名称的图片\",\"titleVi\":\"\",\"sortOrder\":0,\"isVisible\":true},{\"clientKey\":\"9dc77d0c-e785-41f1-adc3-eb80bd7cccf3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-3.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":1,\"isVisible\":true},{\"clientKey\":\"948feff0-d202-486f-87ef-32b98cab6341\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-4.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":2,\"isVisible\":true},{\"clientKey\":\"0b36f2b1-b2ce-4811-9dc7-df6a9a4946f0\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-5.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":3,\"isVisible\":true},{\"clientKey\":\"90baacaa-0736-45b0-b25e-021bbd324d33\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-6.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":4,\"isVisible\":true},{\"clientKey\":\"cdbd2a1d-04ab-46b8-9e29-6a61587e5b28\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-7.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":5,\"isVisible\":true},{\"clientKey\":\"0b16c193-822e-479c-98c0-952607878dbc\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-8.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":6,\"isVisible\":true},{\"clientKey\":\"0b7da582-eab4-47cb-a160-544289d65e84\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-9.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":7,\"isVisible\":true},{\"clientKey\":\"ac6a3cc1-59c6-4ed2-a64d-9aadc0f9a1e0\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-10.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":8,\"isVisible\":true},{\"clientKey\":\"5a5501df-4655-4654-978b-387b8bed9912\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-11.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":9,\"isVisible\":true},{\"clientKey\":\"c26a6f9b-685c-4eb9-bb2a-8a81d4ea72bd\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-12.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":10,\"isVisible\":true},{\"clientKey\":\"f067b3a6-3c5e-41c3-b5a4-154d0c84ba9a\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-13.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":11,\"isVisible\":true},{\"clientKey\":\"fd707f3a-081d-4940-a308-a2306b5188d3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-14.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":12,\"isVisible\":true},{\"clientKey\":\"c6d06817-9b75-4dcb-bcaa-e6c62b047466\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-15.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":13,\"isVisible\":true},{\"clientKey\":\"c39829ef-cecd-471a-98aa-7e25a20cde76\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-16.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":14,\"isVisible\":true},{\"clientKey\":\"d86a46f8-e2a2-4318-ad61-8c917c11c1a1\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-17.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":15,\"isVisible\":true},{\"clientKey\":\"bd64b6d3-0efb-4ffc-9145-a8b11992ca35\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-18.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":16,\"isVisible\":true},{\"clientKey\":\"2e5cf258-53c1-4d27-a1ba-ced37a64c8eb\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-19.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":17,\"isVisible\":true},{\"clientKey\":\"a802d7c8-3733-4f95-9633-47a9a4a26523\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-20.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":18,\"isVisible\":true},{\"clientKey\":\"c8c2481b-aa37-4cd6-9330-301666e0faad\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-21.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":19,\"isVisible\":true},{\"clientKey\":\"b235256a-a75b-4d5e-87a0-4cc9688f61ea\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-22.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":20,\"isVisible\":true},{\"clientKey\":\"ef8c0ee3-8523-4249-85e4-369e4fcfdb5b\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-23.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":21,\"isVisible\":true},{\"clientKey\":\"9a22a83f-9801-482e-9672-208b28756d90\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-24.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":22,\"isVisible\":true},{\"clientKey\":\"3828447b-7ab8-4b84-91dc-775f9b96a839\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-25.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":23,\"isVisible\":true},{\"clientKey\":\"f60de0e4-3a73-4ea4-8ba7-4f8ee7264762\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-26.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":24,\"isVisible\":true},{\"clientKey\":\"f990db7e-f3a2-4c5f-9c77-b23d53ffdf44\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-27.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":25,\"isVisible\":true},{\"clientKey\":\"476e228e-f6a0-43df-b45e-111f73c90c07\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-28.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":26,\"isVisible\":true},{\"clientKey\":\"37398873-4919-44a8-8f27-536f6f8b346a\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-29.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":27,\"isVisible\":true},{\"clientKey\":\"9b149fc3-f901-4fc3-befa-f89a8d426a46\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-30.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":28,\"isVisible\":true},{\"clientKey\":\"d25b1ff5-cd2e-4336-9438-5d29209f90dd\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-31.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":29,\"isVisible\":true},{\"clientKey\":\"8eef2518-7196-49de-8802-2389aef1a6f1\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-32.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":30,\"isVisible\":true},{\"clientKey\":\"b3fd79d9-be7a-4cfa-8fa1-d85df7c29aab\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-33.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":31,\"isVisible\":true},{\"clientKey\":\"a2282443-60fc-4ff6-8237-2924597b6fcc\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-34.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":32,\"isVisible\":true},{\"clientKey\":\"53b39821-ba23-4ac5-8d8f-10215a65b0c8\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-35.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":33,\"isVisible\":true},{\"clientKey\":\"f2737ec8-6a62-429e-b2db-eb2b849785bb\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-36.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":34,\"isVisible\":true},{\"clientKey\":\"a5e761da-895b-4716-bd65-9a2854a270df\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-37.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":35,\"isVisible\":true},{\"clientKey\":\"93bc8fda-cc8e-4777-8793-42ee45405834\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-38.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":36,\"isVisible\":true},{\"clientKey\":\"9ddd0635-cdfc-470f-a798-1b444b0bf1a7\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-39.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":37,\"isVisible\":true},{\"clientKey\":\"44dabbd0-71a8-4b8d-8956-26074e75fc46\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-40.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":38,\"isVisible\":true},{\"clientKey\":\"d9933d0d-2f9e-4c80-944f-896088897bd3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-41.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":39,\"isVisible\":true},{\"clientKey\":\"a4cb4248-e5b0-43da-b548-2ec882265be2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-42.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":40,\"isVisible\":true},{\"clientKey\":\"73d9662c-0155-479c-8421-e629d7da445d\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-43.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":41,\"isVisible\":true},{\"clientKey\":\"cf265f1e-8e8a-4df0-87ef-5e804729b73d\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-44.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":42,\"isVisible\":true},{\"clientKey\":\"f329d147-29e3-45a8-baff-bf1529037384\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-45.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":43,\"isVisible\":true},{\"clientKey\":\"6f95dc89-e135-4f98-9cf1-271b25020112\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-46.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":44,\"isVisible\":true},{\"clientKey\":\"7e75330f-d137-4c35-92ed-01e0cd473109\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-47.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":45,\"isVisible\":true},{\"clientKey\":\"b7e5814d-d969-4312-a1b3-3576f16a9bf9\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-48.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":46,\"isVisible\":true},{\"clientKey\":\"684d1337-9928-4e2c-9aa3-3a96df17d543\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-49.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":47,\"isVisible\":true},{\"clientKey\":\"c089b337-fd8b-4696-8061-0b2e6e0c70c2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-50.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":48,\"isVisible\":true},{\"clientKey\":\"21a549ac-71c4-482f-98b4-c274e51819d2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-51.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":49,\"isVisible\":true}],\"tagIds\":[\"1\"],\"signatureDishes\":[{\"clientKey\":\"0b67c4f6-e8f6-4e96-8242-0553b5840501\",\"nameZh\":\"仅在草稿中的招牌菜\",\"nameVi\":\"\",\"nameEn\":\"\",\"imageUrl\":\"/uploads/platform-preview-1.png\",\"sortOrder\":0,\"isVisible\":true}],\"serviceItems\":[],\"claimStatus\":\"UNCLAIMED\",\"contentCounts\":{\"menu\":0,\"services\":0},\"version\":0,\"baseRevision\":\"LOCAL_REVISION\",\"currentlyVisible\":true,\"hasDraft\":false,\"missing\":[\"封面\",\"菜单或菜品\"]}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/merchants/1/draft",
+      "body": "{\"profile\":{\"id\":\"1\",\"nameZh\":\"本地验收 · 迎客餐厅\",\"nameVi\":\"Nhà hàng thử nghiệm\",\"city\":\"北江\",\"province\":\"北江\",\"contactName\":\"本地验收联系人\",\"contactPhone\":\"0900000000\",\"addressZh\":\"本地示例地址\",\"addressVi\":\"Địa chỉ thử nghiệm\",\"descriptionZh\":\"本地隔离示例，不是线上商家\",\"descriptionVi\":\"Dữ liệu thử nghiệm nội bộ\",\"latitude\":\"21.1861\",\"longitude\":\"106.0763\",\"coverUrl\":\"/uploads/platform-preview-53.png\",\"businessType\":{\"id\":\"1\",\"code\":\"CHINESE_RESTAURANT\",\"nameZh\":\"中式餐饮\",\"nameVi\":\"Ẩm thực Trung Hoa\",\"nameEn\":\"Chinese dining\",\"enabled\":true,\"parentId\":null,\"level\":1,\"sortOrder\":10,\"showOnHome\":true,\"defaultMerchantMode\":\"DISPLAY\",\"defaultCapabilities\":{}},\"businessTypeId\":\"3\",\"status\":\"ACTIVE\",\"isVisibleOnClient\":true,\"claimStatus\":\"UNCLAIMED\",\"updatedAt\":\"2026-11-05T04:20:00.000Z\",\"createdAt\":\"2026-11-05T04:20:00.000Z\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"],\"images\":[],\"capabilities\":[{\"id\":\"1\",\"code\":\"phoneEnabled\",\"nameZh\":\"联系电话\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":0,\"isEnabled\":true},{\"id\":\"2\",\"code\":\"navigationEnabled\",\"nameZh\":\"地图导航\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":1,\"isEnabled\":true},{\"id\":\"3\",\"code\":\"imageGalleryEnabled\",\"nameZh\":\"图片相册\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":2,\"isEnabled\":true},{\"id\":\"4\",\"code\":\"dineInEnabled\",\"nameZh\":\"堂食\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":3,\"isEnabled\":false},{\"id\":\"5\",\"code\":\"pickupEnabled\",\"nameZh\":\"到店自取\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":4,\"isEnabled\":false},{\"id\":\"6\",\"code\":\"deliveryEnabled\",\"nameZh\":\"商家配送\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":5,\"isEnabled\":false},{\"id\":\"7\",\"code\":\"qrOrderEnabled\",\"nameZh\":\"扫码点餐\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":6,\"isEnabled\":false},{\"id\":\"8\",\"code\":\"printerEnabled\",\"nameZh\":\"打印机\",\"groupCode\":\"PRINTING\",\"groupNameZh\":\"打印能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":7,\"isEnabled\":false}],\"missing\":[\"封面\",\"菜单或菜品\"],\"openingHoursText\":\"09:00-22:00\",\"businessHours\":{\"monday\":[\"09:00-22:00\"]},\"merchantMode\":\"DISPLAY\",\"account\":\"\",\"phone\":\"0900000000\",\"isActive\":true,\"profileCompletion\":75,\"promotionTags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false}]},\"images\":[{\"clientKey\":\"c021026b-23e2-4779-ac55-e0e26cd99126\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-52.png\",\"titleZh\":\"保留名称的图片\",\"titleVi\":\"\",\"sortOrder\":0,\"isVisible\":true},{\"clientKey\":\"9dc77d0c-e785-41f1-adc3-eb80bd7cccf3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-3.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":1,\"isVisible\":true},{\"clientKey\":\"948feff0-d202-486f-87ef-32b98cab6341\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-4.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":2,\"isVisible\":true},{\"clientKey\":\"0b36f2b1-b2ce-4811-9dc7-df6a9a4946f0\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-5.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":3,\"isVisible\":true},{\"clientKey\":\"90baacaa-0736-45b0-b25e-021bbd324d33\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-6.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":4,\"isVisible\":true},{\"clientKey\":\"cdbd2a1d-04ab-46b8-9e29-6a61587e5b28\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-7.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":5,\"isVisible\":true},{\"clientKey\":\"0b16c193-822e-479c-98c0-952607878dbc\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-8.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":6,\"isVisible\":true},{\"clientKey\":\"0b7da582-eab4-47cb-a160-544289d65e84\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-9.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":7,\"isVisible\":true},{\"clientKey\":\"ac6a3cc1-59c6-4ed2-a64d-9aadc0f9a1e0\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-10.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":8,\"isVisible\":true},{\"clientKey\":\"5a5501df-4655-4654-978b-387b8bed9912\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-11.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":9,\"isVisible\":true},{\"clientKey\":\"c26a6f9b-685c-4eb9-bb2a-8a81d4ea72bd\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-12.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":10,\"isVisible\":true},{\"clientKey\":\"f067b3a6-3c5e-41c3-b5a4-154d0c84ba9a\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-13.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":11,\"isVisible\":true},{\"clientKey\":\"fd707f3a-081d-4940-a308-a2306b5188d3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-14.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":12,\"isVisible\":true},{\"clientKey\":\"c6d06817-9b75-4dcb-bcaa-e6c62b047466\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-15.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":13,\"isVisible\":true},{\"clientKey\":\"c39829ef-cecd-471a-98aa-7e25a20cde76\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-16.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":14,\"isVisible\":true},{\"clientKey\":\"d86a46f8-e2a2-4318-ad61-8c917c11c1a1\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-17.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":15,\"isVisible\":true},{\"clientKey\":\"bd64b6d3-0efb-4ffc-9145-a8b11992ca35\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-18.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":16,\"isVisible\":true},{\"clientKey\":\"2e5cf258-53c1-4d27-a1ba-ced37a64c8eb\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-19.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":17,\"isVisible\":true},{\"clientKey\":\"a802d7c8-3733-4f95-9633-47a9a4a26523\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-20.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":18,\"isVisible\":true},{\"clientKey\":\"c8c2481b-aa37-4cd6-9330-301666e0faad\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-21.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":19,\"isVisible\":true},{\"clientKey\":\"b235256a-a75b-4d5e-87a0-4cc9688f61ea\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-22.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":20,\"isVisible\":true},{\"clientKey\":\"ef8c0ee3-8523-4249-85e4-369e4fcfdb5b\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-23.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":21,\"isVisible\":true},{\"clientKey\":\"9a22a83f-9801-482e-9672-208b28756d90\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-24.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":22,\"isVisible\":true},{\"clientKey\":\"3828447b-7ab8-4b84-91dc-775f9b96a839\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-25.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":23,\"isVisible\":true},{\"clientKey\":\"f60de0e4-3a73-4ea4-8ba7-4f8ee7264762\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-26.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":24,\"isVisible\":true},{\"clientKey\":\"f990db7e-f3a2-4c5f-9c77-b23d53ffdf44\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-27.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":25,\"isVisible\":true},{\"clientKey\":\"476e228e-f6a0-43df-b45e-111f73c90c07\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-28.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":26,\"isVisible\":true},{\"clientKey\":\"37398873-4919-44a8-8f27-536f6f8b346a\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-29.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":27,\"isVisible\":true},{\"clientKey\":\"9b149fc3-f901-4fc3-befa-f89a8d426a46\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-30.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":28,\"isVisible\":true},{\"clientKey\":\"d25b1ff5-cd2e-4336-9438-5d29209f90dd\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-31.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":29,\"isVisible\":true},{\"clientKey\":\"8eef2518-7196-49de-8802-2389aef1a6f1\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-32.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":30,\"isVisible\":true},{\"clientKey\":\"b3fd79d9-be7a-4cfa-8fa1-d85df7c29aab\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-33.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":31,\"isVisible\":true},{\"clientKey\":\"a2282443-60fc-4ff6-8237-2924597b6fcc\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-34.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":32,\"isVisible\":true},{\"clientKey\":\"53b39821-ba23-4ac5-8d8f-10215a65b0c8\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-35.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":33,\"isVisible\":true},{\"clientKey\":\"f2737ec8-6a62-429e-b2db-eb2b849785bb\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-36.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":34,\"isVisible\":true},{\"clientKey\":\"a5e761da-895b-4716-bd65-9a2854a270df\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-37.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":35,\"isVisible\":true},{\"clientKey\":\"93bc8fda-cc8e-4777-8793-42ee45405834\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-38.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":36,\"isVisible\":true},{\"clientKey\":\"9ddd0635-cdfc-470f-a798-1b444b0bf1a7\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-39.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":37,\"isVisible\":true},{\"clientKey\":\"44dabbd0-71a8-4b8d-8956-26074e75fc46\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-40.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":38,\"isVisible\":true},{\"clientKey\":\"d9933d0d-2f9e-4c80-944f-896088897bd3\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-41.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":39,\"isVisible\":true},{\"clientKey\":\"a4cb4248-e5b0-43da-b548-2ec882265be2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-42.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":40,\"isVisible\":true},{\"clientKey\":\"73d9662c-0155-479c-8421-e629d7da445d\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-43.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":41,\"isVisible\":true},{\"clientKey\":\"cf265f1e-8e8a-4df0-87ef-5e804729b73d\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-44.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":42,\"isVisible\":true},{\"clientKey\":\"f329d147-29e3-45a8-baff-bf1529037384\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-45.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":43,\"isVisible\":true},{\"clientKey\":\"6f95dc89-e135-4f98-9cf1-271b25020112\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-46.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":44,\"isVisible\":true},{\"clientKey\":\"7e75330f-d137-4c35-92ed-01e0cd473109\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-47.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":45,\"isVisible\":true},{\"clientKey\":\"b7e5814d-d969-4312-a1b3-3576f16a9bf9\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-48.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":46,\"isVisible\":true},{\"clientKey\":\"684d1337-9928-4e2c-9aa3-3a96df17d543\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-49.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":47,\"isVisible\":true},{\"clientKey\":\"c089b337-fd8b-4696-8061-0b2e6e0c70c2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-50.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":48,\"isVisible\":true},{\"clientKey\":\"21a549ac-71c4-482f-98b4-c274e51819d2\",\"imageType\":\"STORE\",\"imageUrl\":\"/uploads/platform-preview-51.png\",\"titleZh\":\"\",\"titleVi\":\"\",\"sortOrder\":49,\"isVisible\":true}],\"tagIds\":[\"1\"],\"signatureDishes\":[{\"clientKey\":\"0b67c4f6-e8f6-4e96-8242-0553b5840501\",\"nameZh\":\"仅在草稿中的招牌菜\",\"nameVi\":\"\",\"nameEn\":\"\",\"imageUrl\":\"/uploads/platform-preview-1.png\",\"sortOrder\":0,\"isVisible\":true}],\"serviceItems\":[{\"clientKey\":\"343c15e0-1168-4168-b232-c7094b0bfc3e\",\"nameZh\":\"双人客房\",\"nameVi\":\"\",\"nameEn\":\"\",\"imageUrl\":\"\",\"sortOrder\":0,\"isVisible\":true,\"descriptionZh\":\"\",\"descriptionVi\":\"\",\"descriptionEn\":\"\",\"priceMode\":\"INQUIRY\",\"amountVnd\":null,\"durationMinutes\":null,\"unit\":\"\"}],\"claimStatus\":\"UNCLAIMED\",\"contentCounts\":{\"menu\":0,\"services\":0},\"version\":1,\"baseRevision\":\"LOCAL_REVISION\",\"currentlyVisible\":true,\"hasDraft\":true,\"missing\":[\"封面\",\"菜单或菜品\"],\"savedAt\":\"2026-11-06T01:09:04.687Z\"}"
+    },
+    {
+      "url": "/__platform_preview/api/v1/platform/workbench/merchants/3/draft",
+      "body": "{\"profile\":{\"id\":\"3\",\"nameZh\":\"本地验收 · 小巷越餐\",\"nameVi\":\"Quán ăn thử nghiệm\",\"city\":\"北宁\",\"province\":\"北宁\",\"contactName\":\"本地验收联系人\",\"contactPhone\":\"0900000000\",\"addressZh\":\"本地示例地址\",\"addressVi\":\"Địa chỉ thử nghiệm\",\"descriptionZh\":\"本地隔离示例，不是线上商家\",\"descriptionVi\":\"Dữ liệu thử nghiệm nội bộ\",\"latitude\":\"21.1861\",\"longitude\":\"106.0763\",\"coverUrl\":null,\"businessType\":{\"id\":\"1\",\"code\":\"CHINESE_RESTAURANT\",\"nameZh\":\"中式餐饮\",\"nameVi\":\"Ẩm thực Trung Hoa\",\"nameEn\":\"Chinese dining\",\"enabled\":true,\"parentId\":null,\"level\":1,\"sortOrder\":10,\"showOnHome\":true,\"defaultMerchantMode\":\"DISPLAY\",\"defaultCapabilities\":{}},\"businessTypeId\":\"1\",\"status\":\"ACTIVE\",\"isVisibleOnClient\":true,\"claimStatus\":\"CLAIMED\",\"updatedAt\":\"2026-11-05T04:20:00.000Z\",\"createdAt\":\"2026-11-05T04:20:00.000Z\",\"manualPopular\":true,\"homepageCategoryKeys\":[\"chinese_dining\"],\"images\":[],\"capabilities\":[{\"id\":\"1\",\"code\":\"phoneEnabled\",\"nameZh\":\"联系电话\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":0,\"isEnabled\":true},{\"id\":\"2\",\"code\":\"navigationEnabled\",\"nameZh\":\"地图导航\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":1,\"isEnabled\":true},{\"id\":\"3\",\"code\":\"imageGalleryEnabled\",\"nameZh\":\"图片相册\",\"groupCode\":\"DISPLAY\",\"groupNameZh\":\"展示能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":2,\"isEnabled\":true},{\"id\":\"4\",\"code\":\"dineInEnabled\",\"nameZh\":\"堂食\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":3,\"isEnabled\":false},{\"id\":\"5\",\"code\":\"pickupEnabled\",\"nameZh\":\"到店自取\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":4,\"isEnabled\":false},{\"id\":\"6\",\"code\":\"deliveryEnabled\",\"nameZh\":\"商家配送\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":5,\"isEnabled\":false},{\"id\":\"7\",\"code\":\"qrOrderEnabled\",\"nameZh\":\"扫码点餐\",\"groupCode\":\"ORDER\",\"groupNameZh\":\"经营能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":6,\"isEnabled\":false},{\"id\":\"8\",\"code\":\"printerEnabled\",\"nameZh\":\"打印机\",\"groupCode\":\"PRINTING\",\"groupNameZh\":\"打印能力\",\"enabled\":true,\"defaultValue\":false,\"sortOrder\":7,\"isEnabled\":false}],\"missing\":[],\"openingHoursText\":\"09:00-22:00\",\"businessHours\":{\"monday\":[\"09:00-22:00\"]},\"merchantMode\":\"DISPLAY\",\"account\":\"\",\"phone\":\"0900000000\",\"isActive\":true,\"profileCompletion\":75,\"promotionTags\":[{\"id\":\"1\",\"code\":\"FAMILY\",\"nameZh\":\"亲子友好\",\"nameVi\":\"Thân thiện với gia đình\",\"nameEn\":\"Family friendly\",\"scope\":\"SCENE\",\"color\":\"#7961c8\",\"enabled\":true,\"sortOrder\":0,\"merchantReferenceCount\":3,\"reserved\":false}]},\"images\":[],\"tagIds\":[\"1\"],\"signatureDishes\":[{\"id\":\"100\",\"nameZh\":\"认领前的独立记录\",\"imageUrl\":\"/uploads/platform-preview-0.png\",\"sortOrder\":0,\"isVisible\":true}],\"serviceItems\":[],\"claimStatus\":\"CLAIMED\",\"contentCounts\":{\"menu\":2,\"services\":0},\"version\":0,\"baseRevision\":\"LOCAL_REVISION\",\"currentlyVisible\":true,\"hasDraft\":false,\"missing\":[\"封面\",\"菜单或菜品\"]}"
+    }
+  ],
+  "languageLayouts": [
+    {
+      "language": "en",
+      "path": "dashboard",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "analytics",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants/new",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants/import",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants/1/operations",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchants/trash",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "explore",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "explore/categories/food",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "explore/topics/after-work",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "recommendations",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "promotion-tags",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "promotion-tags/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "orders",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "reviews",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "users",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "settings",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchant-types",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchant-types/new",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "en",
+      "path": "merchant-types/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "dashboard",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "analytics",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants/new",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants/import",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants/1/operations",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchants/trash",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "explore",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "explore/categories/food",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "explore/topics/after-work",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "recommendations",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "promotion-tags",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "promotion-tags/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "orders",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "reviews",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "users",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "settings",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchant-types",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchant-types/new",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    },
+    {
+      "language": "vi",
+      "path": "merchant-types/1",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "untranslatedButtons": []
+    }
+  ],
+  "lastPage": "http://127.0.0.1:4210/platform/login",
+  "lastUploadStates": [],
+  "lastMessages": []
+}

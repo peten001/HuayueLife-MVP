@@ -1,0 +1,65 @@
+[
+  {
+    "file": "01-overview.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1706255,
+    "sha256": "ac291b7089f66b71e78d188a97d736bf726b03de9d95f073f82358b146445b2a"
+  },
+  {
+    "file": "02-analytics.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1625255,
+    "sha256": "0ea65b63fc4f2a08d2200d8d11fa2105ff14f26f6efd9b33659c04df92030ad7"
+  },
+  {
+    "file": "03-merchants.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1673937,
+    "sha256": "07bcdda67bcd19949f1e71e9ac05839d87273bb9f62fa5d7b2c384beb74bd155"
+  },
+  {
+    "file": "04-merchant-editor.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1887015,
+    "sha256": "5a74fb014a0a54a7b4108bf6d3572cdb57f72f9a1778182a71ab7a743f12d719"
+  },
+  {
+    "file": "05-content.png",
+    "width": 1585,
+    "height": 992,
+    "bytes": 1846151,
+    "sha256": "f6ec1000bfe2d37d7c3ad3ceae52aeee317d1254b1f11ef1e47a6ab1cb12197c"
+  },
+  {
+    "file": "06-orders.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1705661,
+    "sha256": "be0f42f3abb0907f64db6d18927ff2daf06d985cb1e01260585d4ff2f222822e"
+  },
+  {
+    "file": "07-reviews.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1756121,
+    "sha256": "ce72ed82b952e8cc1bb995aca504671a399394b82de9cc0daecb6068a90a54c9"
+  },
+  {
+    "file": "08-settings.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1608526,
+    "sha256": "1ccc880613c6e4de2b535592b46965b1d2c4b3be4cd9123d381988bf6953612f"
+  },
+  {
+    "file": "09-tags.png",
+    "width": 1586,
+    "height": 992,
+    "bytes": 1629638,
+    "sha256": "a2bf1692b6bc46376d7b3d57f7ca6f7271f46b7d74f49c3bb25b9f51c8cce403"
+  }
+]

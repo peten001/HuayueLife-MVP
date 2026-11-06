@@ -10,7 +10,11 @@ import { resolveListenOptions } from './common/config/listen-options';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    bodyParser: false,
   });
+  // Content drafts contain full category/tag sets; image files use multipart limits.
+  app.use(express.json({limit:"8mb"}));
+  app.use(express.urlencoded({extended:true,limit:"8mb"}));
   const { port, host } = resolveListenOptions();
 
   app.setGlobalPrefix('api/v1', {

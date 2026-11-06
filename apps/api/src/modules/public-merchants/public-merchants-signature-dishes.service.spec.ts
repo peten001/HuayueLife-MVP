@@ -148,7 +148,6 @@ describe('PublicMerchantsService signature dishes', () => {
             status: { in: ['ON_SALE', 'SOLD_OUT'] },
           },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-          take: 15,
           select: {
             id: true,
             nameZh: true,

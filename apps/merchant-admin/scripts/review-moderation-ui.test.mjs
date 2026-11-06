@@ -9,7 +9,8 @@ const [page, routes, layout, api] = await Promise.all([
 ]);
 
 assert.match(routes, /path: 'reviews',[\s\S]*PlatformReviewsPage/);
-assert.match(layout, /\/platform\/reviews'[\s\S]*评价审核/);
+assert.match(layout, /path:\s*["']reviews["']/);
+assert.match(layout,/评价审核/);
 assert.match(api, /getPlatformReviews/);
 assert.match(api, /moderatePlatformReview/);
 assert.match(page, /风险与异常/);

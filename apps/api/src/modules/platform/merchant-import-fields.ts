@@ -37,7 +37,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'nameVi',
     label: '越南语店名',
-    required: true,
+    required: false,
     description: '商家的越南语显示名称',
     format: '文本，2-120 字符',
     correctExample: 'Cua hang tien loi 688',
@@ -47,7 +47,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'nameEn',
     label: '英文店名',
-    required: true,
+    required: false,
     description: '商家的英文显示名称',
     format: '文本，2-120 字符',
     correctExample: '688 Convenience Store',
@@ -57,7 +57,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'businessType',
     label: '商家类型',
-    required: true,
+    required: false,
     description: '必须填写系统允许的业务类型编码',
     format: '固定枚举',
     correctExample: 'CONVENIENCE_STORE',
@@ -68,7 +68,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'contactPhone',
     label: '联系电话',
-    required: true,
+    required: false,
     description: '商家联系电话，按文本填写，避免科学计数法和前导 0 丢失',
     format: '文本，1-32 字符',
     correctExample: '0333520688',
@@ -78,7 +78,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'contactName',
     label: '联系人',
-    required: true,
+    required: false,
     description: '商家联系人姓名',
     format: '文本，1-64 字符',
     correctExample: 'Nguyen Van A',
@@ -98,7 +98,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'addressZh',
     label: '中文详细地址',
-    required: true,
+    required: false,
     description: '商家的中文详细地址',
     format: '文本，1-255 字符',
     correctExample: '北江省越安县云中工业区商业街18号',
@@ -108,7 +108,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'latitude',
     label: '纬度',
-    required: true,
+    required: false,
     description: 'Google Maps 纬度，范围 -90 至 90',
     format: '小数，最多 7 位小数',
     correctExample: '21.2414881',
@@ -118,7 +118,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'longitude',
     label: '经度',
-    required: true,
+    required: false,
     description: 'Google Maps 经度，范围 -180 至 180',
     format: '小数，最多 7 位小数',
     correctExample: '106.154411',

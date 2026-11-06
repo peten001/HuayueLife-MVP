@@ -134,15 +134,14 @@ describe('PublicMerchantsService effective detail capabilities', () => {
       'CUISINE_SICHUAN',
       'CUISINE_CANTON',
       'CUISINE_VIETNAMESE',
+      'CUISINE_THAI',
       'SCENE_GATHERING',
       'SCENE_FAMILY',
       'SCENE_DATE',
       'SCENE_BUSINESS',
-    ]);
-    expect(result.detailDisplayTags.map((item: any) => item.code)).not.toEqual(expect.arrayContaining([
-      'CUISINE_THAI',
       'SCENE_LATE_NIGHT',
-    ]));
+    ]);
+    expect(result.detailDisplayTags).toHaveLength(10);
     expect(result.detailDisplayTags).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'HOT_FOOD' }),
     ]));

@@ -34,6 +34,7 @@ export interface MerchantImportPreviewResponse {
   validRows: number;
   invalidRows: number;
   rows: MerchantImportPreviewRow[];
+  columns?: string[];
 }
 
 export interface MerchantImportConfirmRequest {

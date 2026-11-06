@@ -1,5 +1,5 @@
 import { effectiveOrderWhere } from '../orders/effective-order';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ListPlatformOrdersQueryDto } from './dto/list-platform-orders-query.dto';
@@ -27,13 +27,13 @@ export class PlatformOrdersService {
 
     const [items, total, summary] = await Promise.all([
       this.prisma.order.findMany({
-        where,
+        where: effectiveOrderWhere(where),
         include: this.orderInclude,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.order.count({ where }),
+      this.prisma.order.count({ where: effectiveOrderWhere(where) }),
       this.buildSummary(todayStart, tomorrowStart),
     ]);
 
@@ -47,7 +47,13 @@ export class PlatformOrdersService {
   }
 
   private buildWhere(query: ListPlatformOrdersQueryDto): Prisma.OrderWhereInput {
-    const createdAt = buildDateRange(query.dateFrom, query.dateTo);
+    const range = buildDateRange(query.dateFrom, query.dateTo);
+    let createdAt = query.pendingBefore ? {...range,lt:new Date(Math.min(range?.lt instanceof Date?range.lt.getTime():Infinity,new Date(query.pendingBefore).getTime()))} : range;
+    if(query.hour!==undefined){
+      if(!query.dateFrom||query.dateFrom!==query.dateTo)throw new BadRequestException('小时筛选须指定同一天');
+      const start=new Date(`${query.dateFrom}T${String(query.hour).padStart(2,'0')}:00:00+07:00`);
+      createdAt={gte:start,lt:new Date(start.getTime()+3600000)};
+    }
     const merchantKeyword = query.merchantKeyword?.trim();
     const city = query.city?.trim();
     const phone = query.phone?.trim();
@@ -55,6 +61,7 @@ export class PlatformOrdersService {
 
     return {
       createdAt,
+      merchantId: query.merchantId ? BigInt(query.merchantId) : undefined,
       orderType: query.orderType,
       status: query.status,
       contactPhone: phone ? { contains: phone } : undefined,
@@ -80,7 +87,6 @@ export class PlatformOrdersService {
       await Promise.all([
         this.prisma.order.count({
           where: effectiveOrderWhere({
-            status: { not: OrderStatus.CANCELLED },
             createdAt: { gte: todayStart, lt: tomorrowStart },
           }),
         }),
@@ -89,7 +95,7 @@ export class PlatformOrdersService {
         }),
         this.prisma.order.aggregate({
           where: effectiveOrderWhere({
-            status: { not: OrderStatus.CANCELLED },
+            status: OrderStatus.COMPLETED,
             createdAt: { gte: todayStart, lt: tomorrowStart },
           }),
           _sum: { totalAmountVnd: true },

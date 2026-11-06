@@ -1,3 +1,4 @@
+import { merchantContentTemplate } from '../explore/explore-content';
 import {
   BadRequestException,
   ConflictException,
@@ -57,7 +58,7 @@ export class PlatformDictionariesService {
     const items = await this.prisma.merchantBusinessType.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
-    return { items: items.map(serializeBusinessType) };
+    return { items: items.map(item=>({...serializeBusinessType(item),contentTemplate:item.code==='HOTEL'?'HOTEL':merchantContentTemplate(item.code)})) };
   }
 
   async createBusinessType(dto: UpsertBusinessTypeDto) {

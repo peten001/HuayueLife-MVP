@@ -1,3 +1,7 @@
+import { PlatformContentController } from './platform-content.controller';
+import { PlatformContentService } from './platform-content.service';
+import { PlatformWorkbenchController } from './platform-workbench.controller';
+import { PlatformWorkbenchService } from './platform-workbench.service';
 import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../../common/guards/platform-admin.guard';
@@ -28,6 +32,8 @@ import { PrintingModule } from '../printing/printing.module';
 @Module({
   imports: [AppConfigModule, CategoriesModule, PrintingModule],
   controllers: [
+    PlatformContentController,
+    PlatformWorkbenchController,
     PlatformAuthController,
     PlatformDashboardController,
     PlatformAnalyticsController,
@@ -40,6 +46,8 @@ import { PrintingModule } from '../printing/printing.module';
     PlatformReviewsController,
   ],
   providers: [
+    PlatformContentService,
+    PlatformWorkbenchService,
     JwtAuthGuard,
     PlatformAdminGuard,
     PlatformAuthService,

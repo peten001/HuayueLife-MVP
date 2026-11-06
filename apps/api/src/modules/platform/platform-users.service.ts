@@ -76,41 +76,20 @@ export class PlatformUsersService {
     const todayStart = startOfVietnamDay(new Date());
     const tomorrowStart = addDays(todayStart, 1);
 
-    const users = await this.prisma.user.findMany({
-      where: this.buildUserWhere(query),
-      select: {
-        id: true,
-        nickname: true,
-        phone: true,
-        avatarUrl: true,
-        createdAt: true,
-        lastLoginAt: true,
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
-
-    const enriched = await this.enrichUsers(users);
-    const cityKeyword = query.city?.trim().toLowerCase();
-    const filtered = cityKeyword
-      ? enriched.filter((item) => (item.city ?? '').toLowerCase().includes(cityKeyword))
-      : enriched;
-
-    const total = filtered.length;
-    const startIndex = (page - 1) * pageSize;
-    const items = filtered.slice(startIndex, startIndex + pageSize);
-
-    return {
-      items,
-      total,
-      page,
-      pageSize,
-      summary: {
-        userCount: filtered.length,
-        boundPhoneUserCount: filtered.filter((item) => Boolean(item.phone?.trim())).length,
-        todayNewUserCount: filtered.filter((item) => inVietnamDay(item.createdAt, todayStart, tomorrowStart)).length,
-        orderUserCount: filtered.filter((item) => item.orderCount > 0).length,
-      },
-    };
+    let where=this.buildUserWhere(query);
+    const cityKeyword=query.city?.trim().toLowerCase();
+    if(cityKeyword){
+      const latest=await this.prisma.order.findMany({where:effectiveOrderWhere({userId:{not:null},user:where}),distinct:['userId'],select:{userId:true,merchant:{select:{city:true}}},orderBy:[{userId:'asc'},{createdAt:'desc'},{id:'desc'}]});
+      where={AND:[where,{id:{in:latest.filter(order=>order.userId!==null&&(order.merchant.city||'').toLowerCase().includes(cityKeyword)).map(order=>order.userId!)} }]};
+    }
+    const [users,total,boundPhoneUserCount,todayNewUserCount,orderUserCount]=await Promise.all([
+      this.prisma.user.findMany({where,select:{id:true,nickname:true,phone:true,avatarUrl:true,createdAt:true,lastLoginAt:true},orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(page-1)*pageSize,take:pageSize}),
+      this.prisma.user.count({where}),
+      this.prisma.user.count({where:{AND:[where,{phone:{not:null}},{phone:{not:''}}]}}),
+      this.prisma.user.count({where:{AND:[where,{createdAt:{gte:todayStart,lt:tomorrowStart}}]}}),
+      this.prisma.user.count({where:{AND:[where,{orders:{some:effectiveOrderWhere()}}]}}),
+    ]);
+    return {items:await this.enrichUsers(users),total,page,pageSize,summary:{userCount:total,boundPhoneUserCount,todayNewUserCount,orderUserCount}};
   }
 
   async detail(id: bigint): Promise<PlatformUserDetailResponse> {
@@ -130,7 +109,7 @@ export class PlatformUsersService {
     }
 
     const orders = await this.prisma.order.findMany({
-      where: { userId: user.id },
+      where: effectiveOrderWhere({ userId: user.id }),
       select: {
         id: true,
         orderNo: true,
@@ -160,7 +139,7 @@ export class PlatformUsersService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
 
-    const totalAmount = allOrders.reduce((sum, order) => sum + order.totalAmountVnd, 0n);
+    const totalAmount = allOrders.reduce((sum, order) => sum + (order.status===OrderStatus.COMPLETED?order.totalAmountVnd:0n), 0n);
     const completedOrderCount = allOrders.filter((order) => order.status === OrderStatus.COMPLETED).length;
     const canceledOrderCount = allOrders.filter((order) => order.status === OrderStatus.CANCELLED).length;
     const recentOrder = allOrders[0] ?? null;
@@ -182,7 +161,7 @@ export class PlatformUsersService {
         canceledOrderCount,
         lastOrderAt: recentOrder?.createdAt.toISOString() ?? null,
         averageOrderAmount:
-          allOrders.length > 0 ? (totalAmount / BigInt(allOrders.length)).toString() : null,
+          completedOrderCount > 0 ? (totalAmount / BigInt(completedOrderCount)).toString() : null,
       },
       recentOrders: orders.map((order) => ({
         id: order.id.toString(),
@@ -257,6 +236,7 @@ export class PlatformUsersService {
           status: { in: COMPLETED_STATUSES },
         }),
         _count: { _all: true },
+        _sum:{totalAmountVnd:true},
       }),
       this.prisma.order.groupBy({
         by: ['userId'],
@@ -267,7 +247,7 @@ export class PlatformUsersService {
         _count: { _all: true },
       }),
       this.prisma.order.findMany({
-        where: { userId: { in: userIds, not: null } },
+        where: effectiveOrderWhere({ userId: { in: userIds, not: null } }),
         select: {
           userId: true,
           merchant: {
@@ -286,10 +266,10 @@ export class PlatformUsersService {
       allMap.set(item.userId.toString(), item);
     }
 
-    const completedMap = new Map<string, number>();
+    const completedMap = new Map<string, {count:number;amount:bigint}>();
     for (const item of completedOrders) {
       if (item.userId === null) continue;
-      completedMap.set(item.userId.toString(), item._count._all);
+      completedMap.set(item.userId.toString(), {count:item._count._all,amount:item._sum?.totalAmountVnd??0n});
     }
 
     const cancelledMap = new Map<string, number>();
@@ -311,7 +291,7 @@ export class PlatformUsersService {
       const key = user.id.toString();
       const orderGroup = allMap.get(key);
       const orderCount = orderGroup?._count._all ?? 0;
-      const totalAmount = orderGroup?._sum.totalAmountVnd ?? 0n;
+      const totalAmount = completedMap.get(key)?.amount ?? 0n;
       return {
         id: key,
         nickname: user.nickname,
@@ -322,7 +302,7 @@ export class PlatformUsersService {
         lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
         orderCount,
         orderAmount: totalAmount.toString(),
-        completedOrderCount: completedMap.get(key) ?? 0,
+        completedOrderCount: completedMap.get(key)?.count ?? 0,
         canceledOrderCount: cancelledMap.get(key) ?? 0,
         lastOrderAt: orderGroup?._max.createdAt?.toISOString() ?? null,
       };

@@ -3,6 +3,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNumberString,
   IsOptional,
   IsString,
   Matches,
@@ -40,6 +41,10 @@ export class ListPlatformOrdersQueryDto {
   merchantKeyword?: string;
 
   @IsOptional()
+  @IsNumberString({no_symbols:true})
+  merchantId?: string;
+
+  @IsOptional()
   @IsString()
   city?: string;
 
@@ -58,4 +63,10 @@ export class ListPlatformOrdersQueryDto {
   @IsOptional()
   @IsString()
   orderNo?: string;
+
+  @IsOptional()
+  @IsDateString({strict:true})
+  pendingBefore?:string;
+
+  @IsOptional() @Type(()=>Number) @IsInt() @Min(0) @Max(23) hour?:number;
 }

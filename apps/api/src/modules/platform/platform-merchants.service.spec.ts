@@ -643,7 +643,7 @@ describe('PlatformMerchantsService merchant import', () => {
       }),
     );
     const createPayload = createDisplayMerchant.mock.calls[0][0] as Record<string, unknown>;
-    expect(createPayload.businessHours).toEqual(expectedUniformBusinessHours('10:00-22:00'));
+    expect(createPayload.businessHours).toEqual({});
     expect(createPayload).not.toHaveProperty('coverPath');
   });
 
@@ -744,7 +744,7 @@ describe('PlatformMerchantsService merchant import', () => {
 
     expect(preview.rows[0].status).toBe('WARNING');
 
-    await service.confirmMerchantImport({ sessionId: preview.sessionId });
+    await service.confirmMerchantImport({ sessionId: preview.sessionId, rowNumbers: [preview.rows[0].rowNumber] });
     expect(prisma.merchant.update).not.toHaveBeenCalled();
     expect(createDisplayMerchant).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1005,7 +1005,10 @@ describe('PlatformMerchantsService merchant account phone', () => {
 });
 
 describe('PlatformMerchantsService claim signature-category provisioning', () => {
-  it('ensures the system signature category inside the existing account-opening transaction', async () => {
+  it.each([
+    { publishedPhone: '0912345678', draftPhone: null, status: MerchantStatus.ACTIVE },
+    { publishedPhone: '', draftPhone: '0912345678', status: MerchantStatus.PENDING },
+  ])('opens an account and provisions its menu without publishing the profile: $status', async ({publishedPhone, draftPhone, status}) => {
     const merchantUpdate = jest.fn();
     const merchantStaffCreate = jest.fn();
     const transaction = {
@@ -1018,12 +1021,15 @@ describe('PlatformMerchantsService claim signature-category provisioning', () =>
           claimStatus: MerchantClaimStatus.UNCLAIMED,
           merchantMode: MerchantMode.DISPLAY,
           nameZh: '待认领商家',
-          contactPhone: '0912345678',
+          contactPhone: publishedPhone,
+          status,
+          isVisibleOnClient: false,
         })),
       },
       merchantStaff: {
         findFirst: jest.fn(async () => null),
       },
+      platformSetting: { findUnique: jest.fn(async () => ({value: {profile: {contactPhone: draftPhone}}})) },
       $transaction: jest.fn(async (callback: any) => callback(transaction)),
     };
     const signatureCategories = {
@@ -1042,13 +1048,14 @@ describe('PlatformMerchantsService claim signature-category provisioning', () =>
     await service.openAccount(2n);
 
     expect(merchantStaffCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ merchantId: 2n, role: StaffRole.OWNER }),
+      data: expect.objectContaining({ merchantId: 2n, role: StaffRole.OWNER, username: '0912345678' }),
     }));
     expect(merchantUpdate).toHaveBeenCalledWith({
       where: { id: 2n },
       data: {
         claimStatus: MerchantClaimStatus.CLAIMED,
         merchantMode: MerchantMode.MANAGED,
+        ...(status === MerchantStatus.PENDING ? {status: MerchantStatus.ACTIVE} : {}),
       },
     });
     expect(signatureCategories.ensureForClaimedMerchantInTransaction)
@@ -1213,7 +1220,7 @@ describe('PlatformMerchantsService merchant image replacement and deletion', () 
   });
 });
 
-describe('PlatformMerchantsService detail tag limits', () => {
+describe('PlatformMerchantsService unlimited detail tags', () => {
   function buildService(tags: Array<{ scope: string }>) {
     const tx = {
       merchantPromotionTag: {
@@ -1241,7 +1248,7 @@ describe('PlatformMerchantsService detail tag limits', () => {
     return { service, prisma, tx };
   }
 
-  it('accepts up to four cuisine tags', async () => {
+  it('accepts existing cuisine tags', async () => {
     const { service, tx } = buildService(Array.from({ length: 4 }, () => ({ scope: 'CUISINE' })));
 
     await service.updateTags(2n, { promotionTagIds: ['1', '2', '3', '4'] });
@@ -1252,13 +1259,13 @@ describe('PlatformMerchantsService detail tag limits', () => {
   it.each([
     ['CUISINE', '菜系'],
     ['SCENE', '场景'],
-  ])('rejects a fifth %s tag', async (scope, label) => {
+  ])('accepts more than four %s tags', async (scope) => {
     const { service, tx } = buildService(Array.from({ length: 5 }, () => ({ scope })));
 
     await expect(service.updateTags(2n, {
       promotionTagIds: ['1', '2', '3', '4', '5'],
-    })).rejects.toThrow(`最多选择 4 个${label}标签`);
-    expect(tx.merchantPromotionTag.deleteMany).not.toHaveBeenCalled();
+    })).resolves.toBeDefined();
+    expect(tx.merchantPromotionTag.createMany).toHaveBeenCalled();
   });
 });
 

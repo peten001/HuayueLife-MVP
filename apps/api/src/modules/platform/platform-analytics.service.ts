@@ -1,5 +1,5 @@
 import { effectiveOrderWhere } from '../orders/effective-order';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { PlatformAnalyticsQueryDto } from './dto/platform-analytics-query.dto';
@@ -33,7 +33,14 @@ export class PlatformAnalyticsService {
 
   async getAnalytics(query: PlatformAnalyticsQueryDto) {
     const range = resolveDateRange(query.dateFrom, query.dateTo);
+    const days = (range.end.getTime() - range.start.getTime()) / 86400000;
+    if (!Number.isInteger(days) || days < 1 || days > 366) throw new BadRequestException('日期范围须为 1 至 366 天');
     const where = this.buildWhere(query, range);
+    const previousRange = { start: addDays(range.start, -days), end: range.start };
+    const previousOrders = await this.prisma.order.findMany({
+      where: effectiveOrderWhere(this.buildWhere(query, previousRange)),
+      select: { status: true, totalAmountVnd: true, createdAt: true },
+    });
     const [orders] = await Promise.all([
       this.prisma.order.findMany({
         where: effectiveOrderWhere(where),
@@ -88,13 +95,13 @@ export class PlatformAnalyticsService {
       const dateRow = ordersByDate.get(date);
       if (dateRow) {
         dateRow.orderCount += 1;
-        dateRow.orderAmount += order.totalAmountVnd;
+        dateRow.orderAmount += order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n;
       }
 
       const typeRow = typeStats.get(order.orderType);
       if (typeRow) {
         typeRow.count += 1;
-        typeRow.amount += order.totalAmountVnd;
+        typeRow.amount += order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n;
       }
 
       const statusRow = statusStats.get(order.status);
@@ -112,7 +119,7 @@ export class PlatformAnalyticsService {
         orderAmount: 0n,
       };
       merchantRow.orderCount += 1;
-      merchantRow.orderAmount += order.totalAmountVnd;
+      merchantRow.orderAmount += order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n;
       merchantStats.set(merchantId, merchantRow);
 
       const cityKey = order.merchant.city || '-';
@@ -123,13 +130,13 @@ export class PlatformAnalyticsService {
         merchantIds: new Set<string>(),
       };
       cityRow.orderCount += 1;
-      cityRow.orderAmount += order.totalAmountVnd;
+      cityRow.orderAmount += order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n;
       cityRow.merchantIds.add(merchantId);
       cityStats.set(cityKey, cityRow);
     }
 
     const orderCount = orders.length;
-    const orderAmount = orders.reduce((sum, item) => sum + item.totalAmountVnd, 0n);
+    const orderAmount = orders.reduce((sum, item) => sum + (item.status === OrderStatus.COMPLETED ? item.totalAmountVnd : 0n), 0n);
     const completedOrderCount = orders.filter((item) => item.status === OrderStatus.COMPLETED).length;
     const canceledOrderCount = orders.filter((item) => item.status === OrderStatus.CANCELLED).length;
     const pendingOrderCount = orders.filter((item) => ACTIVE_ORDER_STATUSES.includes(item.status)).length;
@@ -157,14 +164,29 @@ export class PlatformAnalyticsService {
         orderAmount: item.orderAmount.toString(),
       }));
 
+    const previousTrend = buildDateRangeDates(previousRange.start, previousRange.end).map(date => {
+      const rows = previousOrders.filter(order => formatVietnamDate(order.createdAt) === date);
+      return { date, orderCount: rows.length, orderAmount: rows.reduce((sum, order) => sum + (order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n), 0n).toString() };
+    });
+    const hourRows=(rows:Array<{createdAt:Date;status:OrderStatus;totalAmountVnd:bigint}>,start:Date,current=false)=>Array.from({length:24},(_,hour)=>{
+      const at=new Date(start.getTime()+hour*3600000);
+      const values=rows.filter(row=>row.createdAt>=at&&row.createdAt<new Date(at.getTime()+3600000));
+      const future=current&&at>new Date();
+      return {date:`${formatVietnamDate(start)}T${String(hour).padStart(2,'0')}:00:00+07:00`,orderCount:future?null:values.length,orderAmount:future?null:values.reduce((sum,row)=>sum+(row.status===OrderStatus.COMPLETED?row.totalAmountVnd:0n),0n).toString()};
+    });
     return {
+      ...(days===1?{chartTrend:hourRows(orders,range.start,true)}:{}),
+      range: { dateFrom: formatVietnamDate(range.start), dateTo: formatVietnamDate(addDays(range.end, -1)), timeZone: 'Asia/Ho_Chi_Minh', includesToday: range.start <= startOfVietnamDay(new Date()) && range.end > startOfVietnamDay(new Date()) },
+      previous: { dateFrom: formatVietnamDate(previousRange.start), dateTo: formatVietnamDate(addDays(previousRange.end, -1)), orderCount: previousOrders.length, orderAmount: previousOrders.reduce((sum, order) => sum + (order.status === OrderStatus.COMPLETED ? order.totalAmountVnd : 0n), 0n).toString(), trend: previousTrend, ...(days===1?{chartTrend:hourRows(previousOrders,previousRange.start)}:{}) },
       summary: {
         orderCount,
         orderAmount: orderAmount.toString(),
         completedOrderCount,
+        activeOrderAmount: orders.filter(item => ACTIVE_ORDER_STATUSES.includes(item.status)).reduce((sum, item) => sum + item.totalAmountVnd, 0n).toString(),
+        canceledOrderAmount: orders.filter(item => item.status === OrderStatus.CANCELLED).reduce((sum, item) => sum + item.totalAmountVnd, 0n).toString(),
         canceledOrderCount,
         pendingOrderCount,
-        averageOrderAmount: orderCount > 0 ? (orderAmount / BigInt(orderCount)).toString() : null,
+        averageOrderAmount: completedOrderCount > 0 ? (orderAmount / BigInt(completedOrderCount)).toString() : null,
         completionRate:
           nonCancelledOrderCount > 0
             ? roundRate((completedOrderCount / nonCancelledOrderCount) * 100)

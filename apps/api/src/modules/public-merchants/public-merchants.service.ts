@@ -146,7 +146,6 @@ export class PublicMerchantsService {
   }
 
   async nearby(query: NearbyMerchantsQueryDto) {
-    console.log('[public-merchants] nearby query', query);
     const selectedOperationalRegion = resolveSelectedOperationalRegion(query);
     const keyword = query.keyword?.trim();
     console.log('[public-merchants] selected operational region', selectedOperationalRegion);
@@ -214,48 +213,51 @@ export class PublicMerchantsService {
     const hasUserLocation =
       Number.isFinite(query.lat)
       && Number.isFinite(query.lng);
+    const isCategoryList = Boolean(query.exploreCategory || query.homepageCategoryKey);
     const results = merchants
       .filter((merchant) => !exploreFilter?.promotionTagCode || merchant.promotionTags?.some((tag) => tag.promotionTag.code === exploreFilter.promotionTagCode))
-      .map((merchant) =>
-        this.serializeMerchant(
-          merchant,
-          merchant.categories ?? [],
-          hasUserLocation
-            ? resolveMerchantDistance(
-                query.lat as number,
-                query.lng as number,
-                merchant.latitude,
-                merchant.longitude,
-              )
-            : null,
-        ),
-      )
-      .filter((merchant) => matchesHomepageCategory(
-        merchant,
+      .map((merchant) => {
+        const distance = hasUserLocation
+          ? resolveMerchantDistance(query.lat!, query.lng!, merchant.latitude, merchant.longitude)
+          : null;
+        const summary = this.serializeMerchant(merchant, merchant.categories ?? [], distance);
+        const claimed = isClaimedMerchant(merchant);
+        return {
+          summary,
+          claimed,
+          tags: merchant.promotionTags ?? [],
+          priority: isFeaturedMerchant(summary) || (isCategoryList && (claimed || summary.manualPopular)),
+          sortDistance: isCategoryList ? distance : summary.distanceKm,
+        };
+      })
+      .filter(({ summary }) => matchesHomepageCategory(
+        summary,
         query.homepageCategoryKey,
       ))
-      .filter((merchant) => !exploreFilter?.category || matchesExploreCategory(merchant, exploreFilter.category))
-      .filter((merchant) => !exploreFilter?.topicCategory || matchesExploreCategory(merchant, exploreFilter.topicCategory))
-      .filter((merchant) => matchesMerchantKeyword(merchant, query.keyword))
-      .filter((merchant) => matchesServiceFilters(
-        merchant,
+      .filter(({ summary }) => !exploreFilter?.category || matchesExploreCategory(summary, exploreFilter.category))
+      .filter(({ summary }) => !exploreFilter?.topicCategory || matchesExploreCategory(summary, exploreFilter.topicCategory))
+      .filter(({ summary }) => matchesMerchantKeyword(summary, query.keyword))
+      .filter(({ summary }) => matchesServiceFilters(
+        summary,
         query.serviceFilter ?? [],
       ))
       .sort((a, b) => {
-        const featuredCompare = Number(isFeaturedMerchant(b)) - Number(isFeaturedMerchant(a));
-        if (featuredCompare !== 0) return featuredCompare;
-        const distanceCompare = compareNullableDistance(a.distanceKm, b.distanceKm);
+        if (a.priority !== b.priority) return a.priority ? -1 : 1;
+        const distanceCompare = compareNullableDistance(a.sortDistance, b.sortDistance);
         if (distanceCompare !== 0) return distanceCompare;
-        if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
-        const nameCompare = a.nameZh.localeCompare(b.nameZh, 'zh-CN');
+        if (a.summary.isOpen !== b.summary.isOpen) return a.summary.isOpen ? -1 : 1;
+        const nameCompare = a.summary.nameZh.localeCompare(b.summary.nameZh, 'zh-CN');
         if (nameCompare !== 0) return nameCompare;
-        return compareMerchantIds(a.id, b.id);
+        return compareMerchantIds(a.summary.id, b.summary.id);
       });
     console.log('[public-merchants] nearby result count', results.length);
 
     const start = (query.page - 1) * PAGE_SIZE;
     return {
-      items: results.slice(start, start + PAGE_SIZE),
+      items: results.slice(start, start + PAGE_SIZE).map(({ summary, claimed, tags }) => ({
+        ...summary,
+        ...(claimed ? {} : { discoveryDisplayTags: resolvePublicDisplayTags(tags) }),
+      })),
       page: query.page,
       pageSize: PAGE_SIZE,
       total: results.length,
@@ -568,7 +570,7 @@ export class PublicMerchantsService {
           color: item.promotionTag.color,
         })),
       ...(includeDetailDisplayTags
-        ? { detailDisplayTags: resolveDetailDisplayTags(merchant.promotionTags ?? []) }
+        ? { detailDisplayTags: resolvePublicDisplayTags(merchant.promotionTags ?? []) }
         : {}),
       capabilities: (merchant.capabilities ?? []).map((item) => {
         const orderingAllowed = platformOrderingEnabled
@@ -658,7 +660,6 @@ export class PublicMerchantsService {
             deletedAt: null,
           },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-          take: 15,
           select: {
             id: true,
             nameZh: true,
@@ -756,20 +757,19 @@ export class PublicMerchantsService {
   }
 }
 
-function resolveDetailDisplayTags(
+function resolvePublicDisplayTags(
   relations: NonNullable<PublicMerchantRow['promotionTags']>,
 ) {
-  const byScope = (scope: PromotionTagScope) => relations
+  const byScope = (scope: 'CUISINE' | 'SCENE') => relations
     .filter((item) => item.promotionTag.scope === scope)
     .sort((left, right) => (
       left.promotionTag.sortOrder - right.promotionTag.sortOrder
       || Number(left.promotionTag.id - right.promotionTag.id)
     ))
-    .slice(0, 4)
     .map((item) => ({
       id: item.promotionTag.id.toString(),
       code: item.promotionTag.code,
-      scope: item.promotionTag.scope,
+      scope,
       nameZh: item.promotionTag.nameZh,
       nameVi: item.promotionTag.nameVi,
       nameEn: item.promotionTag.nameEn,
@@ -780,7 +780,7 @@ function resolveDetailDisplayTags(
   return [
     ...byScope(PromotionTagScope.CUISINE),
     ...byScope(PromotionTagScope.SCENE),
-  ].slice(0, 8);
+  ];
 }
 
 const HOT_RECOMMENDATION_CATEGORY_MARKERS = [
@@ -906,10 +906,14 @@ function resolveMerchantDistance(
   merchantLatitude: Prisma.Decimal | number | null,
   merchantLongitude: Prisma.Decimal | number | null,
 ) {
+  if (merchantLatitude == null || merchantLongitude == null) return null;
   const latitude = Number(merchantLatitude);
   const longitude = Number(merchantLongitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return distanceKm(userLatitude, userLongitude, latitude, longitude);
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90
+    || !Number.isFinite(longitude) || Math.abs(longitude) > 180
+    || (latitude === 0 && longitude === 0)) return null;
+  const distance = distanceKm(userLatitude, userLongitude, latitude, longitude);
+  return Number.isFinite(distance) ? distance : null;
 }
 
 function compareNullableDistance(left: number | null, right: number | null) {

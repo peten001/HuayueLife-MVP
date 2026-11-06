@@ -155,6 +155,70 @@ describe('PublicMerchantsService automatic homepage recommendations', () => {
 });
 
 describe('PublicMerchantsService homepage query, ordering and pagination', () => {
+  it.each([
+    ['explore category', { exploreCategory: 'coffee' }],
+    ['legacy homepage category', { homepageCategoryKey: 'coffee_milk_tea' }],
+  ])('ranks claimed and recommended stores together by exact distance across pages for %s', async (_, filter) => {
+    const browseOnly = { merchantMode: 'DISPLAY', claimStatus: 'UNCLAIMED' };
+    const coffee = { homepageCategoryKeys: JSON.stringify(['coffee_milk_tea']) };
+    const rows = Array.from({ length: 21 }, (_, index) => merchant(index + 1, { ...browseOnly, ...coffee }));
+    rows.push(
+      merchant(22, { ...browseOnly, ...coffee, latitude: 91 }),
+      merchant(23, { ...coffee, longitude: 106.00001 }),
+      merchant(24, { ...browseOnly, ...coffee, longitude: 106.00003, promotionTags: [promotionTag('FEATURED')] }),
+      merchant(25, { ...browseOnly, ...coffee, longitude: 106.00002, manualPopular: true }),
+      merchant(26, { ...coffee, claimStatus: 'UNCLAIMED' }),
+      merchant(27, { ...browseOnly, ...coffee, manualPopular: true, latitude: 0, longitude: 0 }),
+    );
+    const explore = { resolveFilter: jest.fn().mockResolvedValue({ category: DEFAULT_EXPLORE_CATEGORIES[1] }) };
+    const { service } = createService(rows, true, explore);
+    const baseQuery = { province: '北江', ...filter };
+    const gpsQuery = { ...baseQuery, lat: 21, lng: 106 };
+
+    const first = await service.nearby(nearbyQuery({ ...gpsQuery, page: 1 }));
+    const second = await service.nearby(nearbyQuery({ ...gpsQuery, page: 2 }));
+    const combined = [...first.items, ...second.items];
+
+    expect(first.items).toHaveLength(20);
+    expect(first.total).toBe(27);
+    expect(second.total).toBe(27);
+    expect(combined.map((item) => item.id)).toEqual([
+      23n, 25n, 24n, 27n, ...rows.slice(0, 21).map((row) => row.id), 26n, 22n,
+    ]);
+    expect(first.items.slice(0, 4).map((item) => item.distanceKm)).toEqual([0, 0, 0, null]);
+    expect(combined[combined.length - 1].distanceKm).toBeNull();
+
+    const city = await service.nearby(nearbyQuery(baseQuery));
+    expect(city.locationMode).toBe('CITY');
+    expect(city.items.slice(0, 4).map((item) => item.id)).toEqual([23n, 24n, 25n, 27n]);
+    expect(city.items.every((item) => item.distanceKm === null)).toBe(true);
+  });
+
+  it('returns public cuisine and scene tags separately for browse-only stores in nearby lists', async () => {
+    const laterCuisine = promotionTag('CUISINE_B', PromotionTagScope.CUISINE);
+    laterCuisine.promotionTag.sortOrder = 1;
+    const firstCuisine = { promotionTag: { ...promotionTag('CUISINE_A', PromotionTagScope.CUISINE).promotionTag, nameVi: 'Món Việt' } };
+    const tags = [promotionTag('FEATURED'), laterCuisine, promotionTag('SCENE', PromotionTagScope.SCENE), firstCuisine];
+    const { service, findMany } = createService([
+      merchant(1, { merchantMode: 'DISPLAY', claimStatus: 'UNCLAIMED', promotionTags: tags }),
+      merchant(2, { promotionTags: tags }),
+    ]);
+
+    const { items: [browseOnly, claimed] } = await service.nearby(nearbyQuery({ province: '北江' }));
+
+    expect(browseOnly.promotionTags.map((tag) => tag.code)).toEqual(['FEATURED']);
+    expect(browseOnly.discoveryDisplayTags).toEqual([
+      expect.objectContaining({ code: 'CUISINE_A', scope: 'CUISINE', nameVi: 'Món Việt' }),
+      expect.objectContaining({ code: 'CUISINE_B', scope: 'CUISINE' }),
+      expect.objectContaining({ code: 'SCENE', scope: 'SCENE' }),
+    ]);
+    expect(browseOnly).not.toHaveProperty('detailDisplayTags');
+    expect(claimed).not.toHaveProperty('discoveryDisplayTags');
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ promotionTags: expect.objectContaining({ where: { promotionTag: { enabled: true } } }) }),
+    }));
+  });
+
   it('filters the complete regional set by homepage category before pagination', async () => {
     const rows = Array.from({ length: 21 }, (_, index) => merchant(index + 1));
     rows[20].homepageCategoryKeys = JSON.stringify(['coffee_milk_tea']);
@@ -177,7 +241,7 @@ describe('PublicMerchantsService homepage query, ordering and pagination', () =>
     expect(empty).toMatchObject({ items: [], total: 0, page: 1 });
   });
 
-  it('keeps HOT_FOOD and manualPopular in the popular category compatibility layer only', async () => {
+  it('accepts HOT_FOOD and manualPopular for legacy popular category membership', async () => {
     const rows = [
       merchant(1, { promotionTags: [promotionTag('HOT_FOOD')] }),
       merchant(2, { manualPopular: true }),

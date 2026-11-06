@@ -1158,6 +1158,8 @@ model MerchantReviewModerationAction {
   action        ReviewModerationActionType
   fromStatus    ReviewStatus               @map("from_status")
   toStatus      ReviewStatus               @map("to_status")
+  reasonCode    String?                    @map("reason_code") @db.VarChar(32)
+  reasonNote    String?                    @map("reason_note") @db.VarChar(255)
   actorUsername String                     @map("actor_username") @db.VarChar(64)
   createdAt     DateTime                   @default(now()) @map("created_at")
 

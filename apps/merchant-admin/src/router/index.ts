@@ -1,4 +1,7 @@
-import PlatformExplorePage from '@/pages/PlatformExplorePage.vue';
+import PlatformContentWorkspacePage from '@/pages/PlatformContentWorkspacePage.vue';
+import PlatformMerchantDirectoryPage from '@/pages/PlatformMerchantDirectoryPage.vue';
+import PlatformTrashPage from '@/pages/PlatformTrashPage.vue';
+import PlatformMerchantWorkspacePage from '@/pages/PlatformMerchantWorkspacePage.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 import MerchantLayout from '@/layouts/MerchantLayout.vue';
 import PlatformLayout from '@/layouts/PlatformLayout.vue';
@@ -15,13 +18,11 @@ import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import StaffPage from '@/pages/StaffPage.vue';
 import PlatformDashboardPage from '@/pages/PlatformDashboardPage.vue';
 import PlatformAnalyticsPage from '@/pages/PlatformAnalyticsPage.vue';
-import PlatformMerchantDetailPage from '@/pages/PlatformMerchantDetailPage.vue';
-import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
+import PlatformMerchantOperationsPage from '@/pages/PlatformMerchantOperationsPage.vue';
+import PlatformMerchantImportPage from '@/pages/PlatformMerchantImportPage.vue';
 import PlatformBusinessTypesPage from '@/pages/PlatformBusinessTypesPage.vue';
-import PlatformPromotionTagsPage from '@/pages/PlatformPromotionTagsPage.vue';
 import PlatformOrdersPage from '@/pages/PlatformOrdersPage.vue';
 import PlatformReviewsPage from '@/pages/PlatformReviewsPage.vue';
-import PlatformRecommendationsPage from '@/pages/PlatformRecommendationsPage.vue';
 import PlatformUsersPage from '@/pages/PlatformUsersPage.vue';
 import PlatformSettingsPage from '@/pages/PlatformSettingsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
@@ -227,7 +228,7 @@ const router = createRouter({
         },
         {
           path: 'merchants',
-          component: PlatformMerchantsPage,
+          component: PlatformMerchantDirectoryPage,
         },
         {
           path: 'merchant-types',
@@ -235,12 +236,16 @@ const router = createRouter({
         },
         {
           path: 'promotion-tags',
-          component: PlatformPromotionTagsPage,
+          component: PlatformContentWorkspacePage,
         },
-        {
-          path: 'merchants/:id',
-          component: PlatformMerchantDetailPage,
-        },
+        { path: 'merchant-types/:id', component: PlatformBusinessTypesPage },
+        { path: 'promotion-tags/:id', component: PlatformContentWorkspacePage },
+        { path: 'explore/:kind/:id', component: PlatformContentWorkspacePage },
+        { path: 'merchants/trash', component: PlatformTrashPage },
+        { path: 'merchants/import', component: PlatformMerchantImportPage },
+        { path: 'merchants/new', component: PlatformMerchantWorkspacePage },
+        { path: 'merchants/:id/operations', component: PlatformMerchantOperationsPage },
+        { path: 'merchants/:id', component: PlatformMerchantWorkspacePage },
         {
           path: 'orders',
           component: PlatformOrdersPage,
@@ -251,11 +256,11 @@ const router = createRouter({
         },
         {
           path: 'explore',
-          component: PlatformExplorePage,
+          component: PlatformContentWorkspacePage,
         },
         {
           path: 'recommendations',
-          component: PlatformRecommendationsPage,
+          component: PlatformContentWorkspacePage,
         },
         {
           path: 'users',
