@@ -1,0 +1,43 @@
+{
+  "pass": true,
+  "version": "platform-navigation-20261106-v1",
+  "githubCommit": "9bb5c00d73a13f9a7f5d5896d42b13ccc2aa9a43",
+  "regressionBeforeFix": "Order page to settings leaves a permanent transition placeholder until document reload",
+  "fix": "Keyed native route container supports pages with multiple roots",
+  "localNavigation": [
+    {
+      "reducedMotion": "no-preference",
+      "routeChecks": 45,
+      "rapidClicks": 52,
+      "documentRequests": 1
+    },
+    {
+      "reducedMotion": "reduce",
+      "routeChecks": 45,
+      "rapidClicks": 52,
+      "documentRequests": 1
+    }
+  ],
+  "productionNavigation": [
+    {
+      "reducedMotion": "no-preference",
+      "routeChecks": 45,
+      "rapidClicks": 52,
+      "documentRequests": 1
+    },
+    {
+      "reducedMotion": "reduce",
+      "routeChecks": 45,
+      "rapidClicks": 52,
+      "documentRequests": 1
+    }
+  ],
+  "productionBusinessRequestsReadOnly": true,
+  "originalViews": 22,
+  "businessFlows": 15,
+  "languageLayouts": 42,
+  "publicStaticChecks": 22,
+  "errors": [],
+  "apiNotRestarted": true,
+  "businessConfigurationUnchanged": true
+}

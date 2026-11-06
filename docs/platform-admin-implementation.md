@@ -2,6 +2,8 @@
 
 2026-11-06 · 状态：已提交、同步 GitHub main 并上线。范围为电脑平台后台及配套 API；收银、KDS、商家端和小程序保持原版本。实际部署、备份及回退位置见 [发布记录](release/platform-admin-20261106-v1.md)。
 
+2026-11-06 连续切页修复已上线：订单和行业页的多根内容使退出动画无法完成，改用公共单根容器承载切页动效。新增真实客户端导航回归；本地和线上分别通过 90 个页面到达状态、104 次快速点击及前进后退检查，不靠刷新恢复。经营配置、API 和其他端保持。详见 [修复发布记录](release/platform-navigation-20261106-v1.md)。
+
 部署切换时经营总开关保持关闭、原时间及商家配置不变。随后用户在越南时间 11:36 主动开启，并明确要求保留开启；最终只读验收按该最新指示核对，没有恢复旧值。
 
 依据：`platform-admin-redesign.md`、`yunqiao-unified-color-review.md` 和 `ui-review/platform-admin-redesign/review-index-20261105.md` 的已确认设计。
