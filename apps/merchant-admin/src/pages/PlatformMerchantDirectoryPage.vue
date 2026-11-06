@@ -61,6 +61,11 @@ const confirm = ref<"hide" | "trash" | "">("");
 const results = ref<Array<{ id: string; ok: boolean; message?: string }>>([]);
 const working = ref(false);
 let sequence = 0;
+function activeFilters(value: typeof filters) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== ""),
+  );
+}
 const pages = computed(() =>
   Math.max(1, Math.ceil((response.value?.total || 0) / filters.pageSize)),
 );
@@ -91,7 +96,7 @@ async function load() {
   try {
     const data = await exploreRequest<typeof response.value>(
       "get",
-      `/platform/workbench/directory?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)]))}`,
+      `/platform/workbench/directory?${new URLSearchParams(Object.entries(activeFilters(q)).map(([k, v]) => [k, String(v)]))}`,
     );
     if (id !== sequence) return;
     response.value = data;
@@ -115,7 +120,7 @@ async function exportRows() {
   working.value = true;
   try {
     const query = new URLSearchParams(
-      Object.entries(applied.value).map(([k, v]) => [k, String(v)]),
+      Object.entries(activeFilters(applied.value)).map(([k, v]) => [k, String(v)]),
     );
     const file = await exploreRequest<{ filename: string; content: string }>(
       "get",
@@ -151,7 +156,7 @@ async function allMatching() {
     snapshot.value = await exploreRequest(
       "post",
       "/platform/workbench/selection",
-      applied.value,
+      activeFilters(applied.value),
     );
   } catch (e) {
     message.value = errorMessage(e);

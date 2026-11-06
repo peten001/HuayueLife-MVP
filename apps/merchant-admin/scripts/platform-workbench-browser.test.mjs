@@ -40,6 +40,18 @@ page.on("response", (r) => {
     report.errors.push(`${r.status()} ${r.url()}`);
 });
 page.on("request", (r) => {
+  const requestUrl = new URL(r.url());
+  if (
+    /\/directory(?:-export)?$/.test(requestUrl.pathname) &&
+    requestUrl.searchParams.get("businessTypeId") === ""
+  )
+    report.errors.push("Unselected industry must be omitted from directory queries");
+  if (
+    requestUrl.pathname.endsWith("/selection") &&
+    r.postData() &&
+    JSON.parse(r.postData()).businessTypeId === ""
+  )
+    report.errors.push("Unselected industry must be omitted from selection snapshots");
   if (r.method() !== "GET" && r.url().includes("/__platform_preview/"))
     report.requests.push({
       url: r.url().replace(base, ""),
