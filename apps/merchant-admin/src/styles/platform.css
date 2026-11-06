@@ -716,6 +716,9 @@
 .p-drawer-leave-to .p-drawer {
   transform: translateX(100%);
 }
+.p-workbench .p-page-view {
+  min-width: 0;
+}
 .p-page-enter-active,
 .p-page-leave-active {
   transition:

@@ -212,7 +212,9 @@ async function logout() {
       <section class="platform-page-body">
         <RouterView v-slot="{ Component }"
           ><Transition name="p-page" mode="out-in"
-            ><component :is="Component" :key="route.path" /></Transition
+            ><div :key="route.path" class="p-page-view">
+              <component :is="Component" />
+            </div></Transition
         ></RouterView>
       </section>
     </main>

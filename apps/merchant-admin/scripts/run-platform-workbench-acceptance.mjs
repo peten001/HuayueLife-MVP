@@ -30,10 +30,11 @@ try {
       reject(new Error(`Local fixture server exited ${code}: ${diagnostics}`));
     });
   });
-  const test = spawn(
-    process.execPath,
-    [scripts + "platform-workbench-browser.test.mjs"],
-    {
+  for (const script of [
+    "platform-workbench-browser.test.mjs",
+    "platform-navigation-browser.test.mjs",
+  ]) {
+    const test = spawn(process.execPath, [scripts + script], {
       env: {
         ...process.env,
         PLATFORM_ACCEPTANCE_URL: `http://127.0.0.1:${port}`,
@@ -42,10 +43,11 @@ try {
           "/tmp/yunqiao-platform-acceptance",
       },
       stdio: "inherit",
-    },
-  );
-  const [code] = await once(test, "exit");
-  process.exitCode = code || 0;
+    });
+    const [code] = await once(test, "exit");
+    process.exitCode = code || 0;
+    if (process.exitCode) break;
+  }
 } finally {
   server.kill("SIGTERM");
 }
