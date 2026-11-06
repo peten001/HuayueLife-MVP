@@ -54,6 +54,29 @@ function harness() {
   return { service, tx, prisma, draft, proofs };
 }
 describe("Platform content staging and publication", () => {
+  it("keeps existing numeric tag codes editable without changing their identity", async () => {
+    const h = harness();
+    h.draft.tags[0].code = "125";
+    jest
+      .spyOn(h.service as any, "current")
+      .mockResolvedValue({
+        data: {
+          ...h.draft,
+          tags: [{ ...h.draft.tags[0], nameZh: "家庭友好" }],
+        },
+        merchants: [],
+      });
+    await h.service.save(h.draft, "admin");
+    expect(h.tx.platformSetting.upsert).toHaveBeenCalled();
+    expect(h.tx.promotionTag.update).not.toHaveBeenCalled();
+  });
+  it("keeps the code format requirement for a newly created tag", async () => {
+    const h = harness();
+    h.draft.tags.push({ ...h.draft.tags[0], id: "new-test", code: "125" });
+    await expect(h.service.save(h.draft, "admin")).rejects.toThrow(
+      "标签名称、编码或标识无效",
+    );
+  });
   it("includes merchants created after a saved draft while retaining existing draft choices", async () => {
     const h = harness();
     const old = {
@@ -73,15 +96,13 @@ describe("Platform content staging and publication", () => {
     h.proofs.set("platform.content.draft", {
       value: { ...h.draft, recommendations: [old] },
     });
-    jest
-      .spyOn(h.service as any, "current")
-      .mockResolvedValue({
-        data: {
-          ...h.draft,
-          recommendations: [{ ...old, manualPopular: true }, added],
-        },
-        merchants: [],
-      });
+    jest.spyOn(h.service as any, "current").mockResolvedValue({
+      data: {
+        ...h.draft,
+        recommendations: [{ ...old, manualPopular: true }, added],
+      },
+      merchants: [],
+    });
     const result = await h.service.get();
     expect(result.recommendations).toEqual([old, added]);
     expect(h.tx.merchant.update).not.toHaveBeenCalled();

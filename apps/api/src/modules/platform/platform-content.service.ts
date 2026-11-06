@@ -247,8 +247,12 @@ export class PlatformContentService {
     for (const tag of input.tags) {
       validate(UpsertPromotionTagDto, tag);
       if (
+        typeof tag.id !== "string" ||
         !tag.nameZh.trim() ||
-        !/^[A-Z][A-Z0-9_]{0,63}$/.test(tag.code) ||
+        // Persisted legacy codes are immutable and checked against live data below.
+        // Apply the new code format only when creating a new tag.
+        (tag.id.startsWith("new-") &&
+          !/^[A-Z][A-Z0-9_]{0,63}$/.test(tag.code)) ||
         !/^\d+$|^new-[\w-]+$/.test(tag.id)
       )
         throw new BadRequestException("标签名称、编码或标识无效");
