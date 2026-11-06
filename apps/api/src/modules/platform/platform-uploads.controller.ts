@@ -13,7 +13,8 @@ export class PlatformUploadsController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 20 * 1024 * 1024,
+        // Busboy emits its limit event at equality; the service enforces <= 20MB.
+        fileSize: 20 * 1024 * 1024 + 1,
       },
     }),
   )

@@ -87,7 +87,7 @@ export class PlatformMerchantsController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 50 * 1024 * 1024,
+        fileSize: 50 * 1024 * 1024 + 1,
       },
     }),
   )
@@ -161,7 +161,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/images/:imageId/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
   replaceImage(
     @Param('id') id: string,
     @Param('imageId') imageId: string,
@@ -176,7 +176,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/images/:imageType/upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
   uploadImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,
@@ -191,7 +191,7 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/primary-images/:imageType/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
   replacePrimaryImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,
