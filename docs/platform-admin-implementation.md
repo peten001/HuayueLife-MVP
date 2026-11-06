@@ -1,6 +1,8 @@
 # YunQiao 平台后台重构实施记录
 
-2026-11-06 · 状态：代码重构及本地验收完成，尚未部署。范围为电脑平台后台及配套 API；不改收银、KDS、商家端或小程序的视觉。
+2026-11-06 · 状态：已提交、同步 GitHub main 并上线。范围为电脑平台后台及配套 API；收银、KDS、商家端和小程序保持原版本。实际部署、备份及回退位置见 [发布记录](release/platform-admin-20261106-v1.md)。
+
+部署切换时经营总开关保持关闭、原时间及商家配置不变。随后用户在越南时间 11:36 主动开启，并明确要求保留开启；最终只读验收按该最新指示核对，没有恢复旧值。
 
 依据：`platform-admin-redesign.md`、`yunqiao-unified-color-review.md` 和 `ui-review/platform-admin-redesign/review-index-20261105.md` 的已确认设计。
 
@@ -42,7 +44,7 @@
 
 - `corepack pnpm typecheck`：全仓通过。
 - `corepack pnpm build`：全仓通过，包括 API、后台、收银和小程序构建；最后的后台样式与无障碍名称调整另执行后台完整构建。
-- `corepack pnpm --filter @huayue-life/api test`：121 个测试套件、1,399 项通过。
+- `corepack pnpm --filter @huayue-life/api test`：最终 122 个测试套件、1,403 项通过。
 - `corepack pnpm --filter @huayue-life/merchant-admin test`：原有商家后台及平台评价回归通过。被新业务替代的旧页面断言改为新流程测试，不再断言已取消的数量限制。
 - `corepack pnpm --filter @huayue-life/merchant-admin test:platform`：22 个视图、15 条流程；21 个登录后视图各验证英文／越南文 1,280px 布局，共 42 组；无页面运行或非预期接口错误。
 - 实测覆盖单次 50 张相册图片、失败重试、图片替换保留名称、封面裁切、展示项目草稿持久化、房型询价、选中全部筛选结果、审核原因、隐藏恢复和标签预览后发布。
@@ -50,23 +52,24 @@
 
 [本轮截图和流程结果](ui-review/platform-admin-redesign/implementation-20261106/results.json) · [运营总览](ui-review/platform-admin-redesign/implementation-20261106/01-dashboard.png) · [商家资料](ui-review/platform-admin-redesign/implementation-20261106/06-merchants-1.png) · [标签编辑](ui-review/platform-admin-redesign/implementation-20261106/14-promotion-tags-1.png) · [设置](ui-review/platform-admin-redesign/implementation-20261106/18-settings.png)
 
-这些流程使用隔离本地样本；未运行生产数据库写入、迁移或发布操作，也尚未进行新 API 对真实 MySQL 数据的端到端验收。后端原子性和并发边界由服务测试核对，不能将本地样本预览当作线上联调结果。
+以上界面截图和操作流程使用隔离本地样本。上线前另完整恢复生产备份到隔离 MySQL，12 条真实 API 流程及 4 项导入检查通过；生产只执行新增可空审核原因字段迁移，13 个只读接口通过。最终正式域名 22 个页面、三语设置和订单快览验收通过，浏览器业务请求仅 GET／HEAD，未提交生产测试内容。
 
 ## 本地查看
 
 运行 `corepack pnpm --filter @huayue-life/merchant-admin dev:platform-preview`，打开 `http://127.0.0.1:4206/platform/dashboard`。该独立预览仅使用本地示例数据，页面左下角有明确标识，不连接生产服务。常规开发启动方式和实际平台登录继续保留。
 
-## 后续上线需配套处理
+## 已完成的上线配套
 
-1. 先备份并执行新增的 `20261105090000_platform_review_reason` 迁移，仅给评价审核记录添加两个可空原因字段，不改已有业务数据。
-2. 按 [上传接入层配置](../deploy/nginx/platform-upload-limits.inc) 核对实际 Nginx 入口：单张照片由 API 限制 20MB，ZIP 导入 50MB；接入层允许 multipart 头部余量。该文件只是待部署片段，尚未修改服务器配置。
-3. 配套发布 API 与平台后台，并使用隐藏测试商家核对保存草稿、预览／发布和图片上传。保留之前版本用于回退；新增可空字段对旧代码兼容，回退无需删除已有审核原因数据。
+1. 完整备份并校验数据库、旧 API／Linux 依赖、后台文件与原配置；仅应用 `20261105090000_platform_review_reason` 的两个可空原因字段。
+2. Nginx 三处请求大小改为 55m，API 照片 20MB／ZIP 50MB 上限保持；20MB 精确边界与超出一字节分别核对。原图只临时处理，不永久保留。
+3. API 与平台网页配套上线，真实写流程在隔离数据库完成。网页路由只切 `/platform/*`，原商家入口、收银和 KDS 指针／文件保留，新增可空字段兼容旧版回退。
+4. 保留旧数字标签业务编码，并修复商家列表／导出／全选快照发送空行业编号的问题；最终后台构建、22 视图／15 流程／42 组三语布局及线上复核通过。
 
-商家草稿、内容草稿、选择快照和发布预览记录使用已有平台设置存储；不需要新建业务表，不包含现有商家批量改写脚本。正式提交、推送、迁移和部署仍未执行。
+商家草稿、内容草稿、选择快照和发布预览记录使用已有平台设置存储；不需要新建业务表，不包含现有商家批量改写脚本。正式提交、同步 GitHub、迁移和部署均已完成，临时验证数据库与专用用户已清理。
 
 ## 工作区保护
 
-任务开始时已有小程序发现/定位/导航等改动，以及 public-merchants 服务改动。保留原有内容，相关文件只做本任务必要的局部修改。未经要求不提交、不推送、不操作线上数据。
+任务开始时已有小程序发现／定位／导航等改动及文档，均保留且未纳入本次提交。public-merchants 中原有发现排序等改动已在生产运行但未纳入 Git，本次连同回归保存，防止发布回退线上行为；与原生产编译文件仅三处解除数量截断的差异。用户随后明确授权本次提交、推送和部署。
 
 ## 设计方法
 
