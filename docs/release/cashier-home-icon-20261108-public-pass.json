@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "release": "cashier-home-icon-20261108-v1",
+  "verifiedChangedFiles": 9,
+  "browserChecks": [
+    {
+      "width": 390,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/tables",
+      "pageErrors": 0
+    },
+    {
+      "width": 1366,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/tables",
+      "pageErrors": 0
+    }
+  ],
+  "onlineAppleIcon": {
+    "width": 180,
+    "height": 180,
+    "transparent": 0,
+    "black": 0
+  }
+}
