@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => {
         .replace('<img src="/yunqiao-cashier-splash.png" alt="" />', '<img src="/yunqiao-cashier-mark.png" alt="" /><strong class="kds-boot-name">YunQiao KDS</strong>')
         .replace(/terminal-bootstrap\.(css|js)\?v=20260919-push-splash/g, 'terminal-bootstrap.$1?v=20261014-kds-kitchen')
         .replace('href="/manifest.webmanifest"', 'href="/kds.webmanifest"')
+        // The cashier home-screen redesign must not change the independent KDS icon.
+        .replace('href="/icons/cashier-v3-180.png"', 'href="/icons/apple-touch-icon-yunqiao-cashier-v2-180.png"')
+        .replace('href="/icons/cashier-v3-96.png"', 'href="/icons/icon-96.png"')
         .replace('<html lang=', '<html data-terminal-kind="kds" lang=');
     },
   }],

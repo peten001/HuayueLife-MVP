@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const indexHtml = readFileSync(resolve('index.html'), 'utf8');
 const linkedAppleTouchIcon = readFileSync(
-  resolve('public/icons/apple-touch-icon-yunqiao-cashier-v2-180.png'),
+  resolve('public/icons/cashier-v3-180.png'),
 );
 const rootAppleTouchIcon = readFileSync(resolve('public/apple-touch-icon.png'));
 
@@ -15,7 +15,7 @@ describe('iOS icon metadata', () => {
     expect(appleTouchLinks).toHaveLength(1);
     expect(appleTouchLinks[0]).toContain('sizes="180x180"');
     expect(appleTouchLinks[0]).toContain(
-      'href="/icons/apple-touch-icon-yunqiao-cashier-v2-180.png"',
+      'href="/icons/cashier-v3-180.png"',
     );
     expect(indexHtml).not.toContain('href="/icons/apple-touch-icon-180.png"');
     expect(indexHtml).not.toContain('apple-touch-icon-precomposed');

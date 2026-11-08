@@ -1405,7 +1405,7 @@ async function verifyPwaManifestAndNavigation() {
   assert.equal(await appleTouchIcons.count(), 1, 'head should expose exactly one Apple touch icon');
   assert.equal(
     await appleTouchIcons.getAttribute('href'),
-    '/icons/apple-touch-icon-yunqiao-cashier-v2-180.png',
+    '/icons/cashier-v3-180.png',
     'Apple touch icon should use the cache-busted YunQiao URL',
   );
   assert.equal(
@@ -1414,7 +1414,7 @@ async function verifyPwaManifestAndNavigation() {
     'Apple touch icon should declare its 180x180 size',
   );
   const appleTouchIconResponse = await page.request.get(
-    `${baseUrl}/icons/apple-touch-icon-yunqiao-cashier-v2-180.png`,
+    `${baseUrl}/icons/cashier-v3-180.png`,
   );
   assert.equal(appleTouchIconResponse.status(), 200, 'Apple touch icon should return 200');
   assert.ok(
