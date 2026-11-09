@@ -637,40 +637,47 @@ export class OrdersService {
     dto: OrderRequestDto,
   ) {
     const deliveryLatitude =
-      dto.deliveryLatitude === undefined ? null : Number(dto.deliveryLatitude);
+      dto.deliveryLatitude == null ? null : Number(dto.deliveryLatitude);
     const deliveryLongitude =
-      dto.deliveryLongitude === undefined ? null : Number(dto.deliveryLongitude);
+      dto.deliveryLongitude == null ? null : Number(dto.deliveryLongitude);
     const deliveryRadiusKm = Number(merchant.deliveryRadiusKm);
     const merchantLatitude = Number(merchant.latitude);
     const merchantLongitude = Number(merchant.longitude);
 
+    if (dto.orderType !== 'DELIVERY') {
+      return {
+        deliveryFeeVnd: 0n, deliveryRangeVerified: false, outOfRange: false,
+        distanceKm: null as number | null, deliveryRadiusKm,
+      };
+    }
+    if (deliveryLatitude === null || deliveryLongitude === null
+      || !Number.isFinite(deliveryLatitude) || !Number.isFinite(deliveryLongitude)
+      || Math.abs(deliveryLatitude) > 90 || Math.abs(deliveryLongitude) > 180
+      || (deliveryLatitude === 0 && deliveryLongitude === 0)) {
+      throw new BadRequestException('请选择有效的配送收餐位置');
+    }
     if (
-      !Number.isFinite(deliveryLatitude) ||
-      !Number.isFinite(deliveryLongitude) ||
       !Number.isFinite(merchantLatitude) ||
       !Number.isFinite(merchantLongitude) ||
-      !Number.isFinite(deliveryRadiusKm)
+      Math.abs(merchantLatitude) > 90 || Math.abs(merchantLongitude) > 180 ||
+      (merchantLatitude === 0 && merchantLongitude === 0) ||
+      !Number.isFinite(deliveryRadiusKm) || deliveryRadiusKm < 0
     ) {
-      return {
-        deliveryFeeVnd: 0n,
-        deliveryRangeVerified: false,
-        outOfRange: false,
-        distanceKm: null as number | null,
-        deliveryRadiusKm: Number.isFinite(deliveryRadiusKm)
-          ? deliveryRadiusKm
-          : null,
-      };
+      throw new BadRequestException('商家配送范围暂时无法校验，请稍后重试');
     }
 
     const deliveryDistanceKm = distanceKm(
       merchantLatitude,
       merchantLongitude,
-      deliveryLatitude as number,
-      deliveryLongitude as number,
+      deliveryLatitude,
+      deliveryLongitude,
     );
     const inRange = deliveryDistanceKm <= deliveryRadiusKm;
+    if (!inRange) {
+      throw new BadRequestException('配送地址超出商家配送范围，请重新选择地址');
+    }
     return {
-      deliveryFeeVnd: inRange ? merchant.deliveryFeeVnd : 0n,
+      deliveryFeeVnd: merchant.deliveryFeeVnd,
       deliveryRangeVerified: inRange,
       outOfRange: !inRange,
       distanceKm: deliveryDistanceKm,

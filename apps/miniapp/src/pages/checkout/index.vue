@@ -43,6 +43,12 @@ const form = reactive({
 
 const context = computed(() => cartStore.context);
 const deliveryCoordinate = computed(() => normalizeDeliveryCoordinate(form.deliveryLatitude, form.deliveryLongitude));
+const deliverySubmissionBlock = computed(() => {
+  if (context.value?.orderType !== 'DELIVERY') return '';
+  if (!deliveryCoordinate.value) return t('deliveryLocationRequired');
+  return getDeliveryRangeState(deliveryCoordinate.value.latitude, deliveryCoordinate.value.longitude) === 'outside'
+    ? t('deliveryRangeExceeded') : '';
+});
 const deliveryCoordinateLabel = computed(() => deliveryCoordinate.value ? formatDeliveryCoordinate(deliveryCoordinate.value) : '');
 const deliveryAddressLimit = computed(() => 255 - (deliveryCoordinate.value ? `\nGPS: ${deliveryCoordinateLabel.value}`.length : 0));
 const subtotalAmountVnd = computed(() => preview.value?.itemAmountVnd ?? cartStore.cart?.itemAmountVnd ?? '0');
@@ -106,6 +112,7 @@ watch(
 
 function buildOrderRequest(): OrderRequest {
   if (!context.value) throw new Error(t('missingCartContext'));
+  if (deliverySubmissionBlock.value) throw new Error(deliverySubmissionBlock.value);
   const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
   const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
   const deliveryAddress = context.value.orderType === 'DELIVERY'
@@ -203,6 +210,7 @@ async function chooseLocation() {
     form.deliveryLatitude = coordinate.latitude;
     form.deliveryLongitude = coordinate.longitude;
     form.deliveryAddress = stripDeliveryGpsSuffix(selected.address);
+    message.value = '';
     locationLabel.value = deliveryLocationText(locale.value, form.deliveryAddress ? 'selected' : 'selectedWithoutAddress');
     saveContactInfo();
     schedulePreview();
@@ -249,6 +257,10 @@ async function submit() {
   }
 
   const deliveryWarning = getDeliverySubmissionWarning();
+  if (deliverySubmissionBlock.value) {
+    message.value = deliverySubmissionBlock.value;
+    return;
+  }
   if (deliveryWarning) {
     const confirmed = await confirmContinue(deliveryWarning);
     if (!confirmed) {
@@ -296,6 +308,9 @@ async function doSubmit() {
       preview.value = nextPreview;
     } catch (error) {
       console.log('[checkout] preview before submit error', error);
+      // Delivery must pass the server's current range check before creation.
+      // In particular, never turn a rejected preview into a create attempt.
+      if (orderRequest.orderType === 'DELIVERY') throw error;
       console.log('[checkout] preview failed but continue submit');
     }
 
@@ -366,10 +381,7 @@ async function bootstrapCheckout() {
 }
 
 function hasValidDeliveryLocation() {
-  return (
-    normalizeCoordinate(form.deliveryLatitude) !== null &&
-    normalizeCoordinate(form.deliveryLongitude) !== null
-  );
+  return deliveryCoordinate.value !== null;
 }
 
 function schedulePreview() {
@@ -407,6 +419,7 @@ function requiresContactPhone() {
 
 function canPreviewDelivery() {
   if (context.value?.orderType !== 'DELIVERY') return true;
+  if (deliverySubmissionBlock.value) return false;
   const deliveryAddress = form.deliveryAddress.trim();
   const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
   const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
@@ -421,38 +434,13 @@ function getDeliverySubmissionWarning() {
   if (context.value?.orderType !== 'DELIVERY') return '';
 
   const deliveryAddress = form.deliveryAddress.trim();
-  const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
-  const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
   const hasAddress = Boolean(deliveryAddress);
-  const hasLocation = deliveryLatitude !== null && deliveryLongitude !== null;
-
-  if (!hasAddress && !hasLocation) {
-    return checkoutText(
-      '地址不完整时，商家会电话联系你确认，是否继续提交？',
-      'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
-      'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
-    );
-  }
   if (!hasAddress) {
     return checkoutText(
       '地址不完整时，商家会电话联系你确认，是否继续提交？',
       'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
       'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
     );
-  }
-  if (!hasLocation) {
-    return checkoutText(
-      '地址不完整时，商家会电话联系你确认，是否继续提交？',
-      'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
-      'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
-    );
-  }
-  if (getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'outside') {
-    return locale.value === 'vi'
-      ? `${t('deliveryRangeExceeded')}, bạn vẫn muốn gửi đơn chứ?`
-      : locale.value === 'en'
-        ? `${t('deliveryRangeExceeded')} Continue anyway?`
-        : `${t('deliveryRangeExceeded')}，是否继续提交？`;
   }
   return '';
 }
@@ -521,7 +509,7 @@ function getDeliveryRangeState(latitude: number | null, longitude: number | null
   const merchantLongitude = normalizeCoordinate(merchantDetail.value?.longitude);
   if (
     radiusKm === null ||
-    radiusKm <= 0 ||
+    radiusKm < 0 ||
     merchantLatitude === null ||
     merchantLongitude === null
   ) {
@@ -692,7 +680,7 @@ function goHome() {
       </view>
       <view class="hint location-hint">
         <text class="hint-label">
-          {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
+          {{ deliverySubmissionBlock || locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
         </text>
       </view>
     </view>
@@ -733,7 +721,7 @@ function goHome() {
     </view>
 
     <text v-if="message" class="error">{{ message }}</text>
-    <button class="submit" :disabled="submitting" @click="submit">
+    <button class="submit" :disabled="submitting || selectingLocation || Boolean(deliverySubmissionBlock)" @click="submit">
       <text class="button-label">
         {{ submitting ? t('submitting') : t('submitOrder') }}
       </text>

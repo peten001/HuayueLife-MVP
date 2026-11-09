@@ -483,28 +483,28 @@ describe('Cart and order workflow', () => {
     expect(dineInPreview.orderType).toBe('DINE_IN');
   });
 
-  it('supports delivery manual-address and out-of-range fallback with phone confirmation', async () => {
+  it('rejects unlocated and out-of-range delivery and permits an in-range order', async () => {
     await addItem(token, 'DELIVERY', productId, { quantity: 1 });
-    const manualBelowMinimum = await previewOrder(token, {
-      orderType: 'DELIVERY',
-      contactName: '配送用户',
-      contactPhone: '0922222222',
-      deliveryAddress: '北宁测试地址',
-    });
-    expect(manualBelowMinimum.requiresPhoneConfirmation).toBe(true);
-    expect(manualBelowMinimum.deliveryFeeVnd).toBe('0');
+    await request(app.getHttpServer()).post('/api/v1/orders/preview')
+      .set('Authorization', `Bearer ${token}`).send(orderPayload('DELIVERY', {
+        contactName: '配送用户',
+        contactPhone: '0922222222',
+        deliveryAddress: '北宁测试地址',
+      })).expect(400);
 
     await addItem(token, 'DELIVERY', secondProductId, { quantity: 1 });
-    const outOfRange = await previewOrder(token, {
-      orderType: 'DELIVERY',
+    const outOfRange = orderPayload('DELIVERY', {
       contactName: '配送用户',
       contactPhone: '0922222222',
       deliveryAddress: '超出范围地址',
       deliveryLatitude: 21.4,
       deliveryLongitude: 106.4,
     });
-    expect(outOfRange.requiresPhoneConfirmation).toBe(true);
-    expect(outOfRange.deliveryFeeVnd).toBe('0');
+    await request(app.getHttpServer()).post('/api/v1/orders/preview')
+      .set('Authorization', `Bearer ${token}`).send(outOfRange).expect(400);
+    await request(app.getHttpServer()).post('/api/v1/orders')
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `delivery_outside_${Date.now()}`)
+      .send(outOfRange).expect(400);
 
     const located = await previewOrder(token, {
       orderType: 'DELIVERY',
@@ -516,14 +516,6 @@ describe('Cart and order workflow', () => {
     });
     expect(located.deliveryRangeVerified).toBe(true);
     expect(located.deliveryFeeVnd).toBe('20000');
-
-    const manual = await previewOrder(token, {
-      orderType: 'DELIVERY',
-      contactName: '配送用户',
-      contactPhone: '0922222222',
-      deliveryAddress: '手填地址，电话确认',
-    });
-    expect(manual.requiresPhoneConfirmation).toBe(true);
 
     const order = await createOrder(token, `delivery_${Date.now()}`, {
       orderType: 'DELIVERY',

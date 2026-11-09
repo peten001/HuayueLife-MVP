@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 import * as vue from 'vue';
+import { compileTemplate } from 'vue/compiler-sfc';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '../src');
@@ -14,25 +15,33 @@ const contact = { contactPhone: '+84123456789', deliveryAddress: '旧地址', de
 
 // Run the real native-picker adapter and checkout script together. Only native
 // callbacks, storage and unrelated APIs are simulated; no production orders.
-function harness({ cachedContact = contact, privacyAuthorized = true } = {}) {
+function harness({ cachedContact = contact, privacyAuthorized = true, withCart = false, previewError, orderType = 'DELIVERY', merchantProfile = {} } = {}) {
   const hooks = {};
   const choices = [];
   const toasts = [];
+  const modals = [];
+  const redirects = [];
+  const requests = { preview: [], create: [] };
   let cache = cachedContact;
   const uni = {
     chooseLocation: options => choices.push(options),
     showToast: options => toasts.push(options),
+    showModal: options => { modals.push(options); options.success?.({ confirm: true }); },
+    redirectTo: options => redirects.push(options),
     navigateTo: () => assert.fail('delivery selection must use the native picker directly'),
   };
   const mocks = {
     vue: { ...vue, onMounted: () => {}, onBeforeUnmount: () => {}, watch: () => {} },
     '@dcloudio/uni-app': { onShow: fn => { hooks.onShow = fn; } },
     '@/i18n': { useI18n: () => ({ locale: vue.ref('zh'), t: key => key }), usePageTitle: () => {}, translateApiError: text => text },
-    '@/api/cart': {},
-    '@/api/catalog': { getMerchant: async () => ({ ...bacGiang, province: '商家所在省', district: '商家所在区' }) },
+    '@/api/cart': {
+      previewOrder: async payload => { requests.preview.push(payload); if (previewError) throw previewError; return { itemAmountVnd: '50000', deliveryFeeVnd: '15000', totalAmountVnd: '65000', deliveryRangeVerified: true, requiresPhoneConfirmation: false }; },
+      createOrder: async payload => { requests.create.push(payload); return { id: 'fixture', orderNo: 'FIXTURE', orderType }; },
+    },
+    '@/api/catalog': { getMerchant: async () => ({ ...bacGiang, province: '商家所在省', district: '商家所在区', ...merchantProfile }) },
     '@/stores/app-config': { useAppConfigStore: () => ({ platformOrderingEnabled: true, ensureLoaded: async () => {} }) },
     '@/stores/auth': { useAuthStore: () => ({ ensureLogin: async () => {}, user: null }) },
-    '@/stores/cart': { useCartStore: () => ({ context: { merchantId: 'fixture', orderType: 'DELIVERY' }, cart: null, load: async () => {} }) },
+    '@/stores/cart': { useCartStore: () => ({ context: { merchantId: 'fixture', orderType }, cart: withCart ? { items: [{ id: 'fixture' }], itemAmountVnd: '50000' } : null, load: async () => {}, resetAfterOrder: () => {} }) },
     '@/stores/location': { useLocationStore: () => ({ ...bacGiang, city: 'Bac Giang' }) },
     '@/utils/storage': { getLastContactInfo: () => cache, setLastContactInfo: value => { cache = value; } },
     '@/utils/privacy': { ensurePrivacyAuthorized: async () => privacyAuthorized },
@@ -42,7 +51,7 @@ function harness({ cachedContact = contact, privacyAuthorized = true } = {}) {
     if (modules.has(file)) return modules.get(file);
     let source = readFileSync(file, 'utf8');
     if (file.endsWith('.vue')) source = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
-      + '\nexport { form, locationLabel, bootstrapCheckout, chooseLocation, buildOrderRequest };';
+      + '\nexport { form, locationLabel, bootstrapCheckout, chooseLocation, buildOrderRequest, deliveryAddressLimit, checkoutText, deliverySubmissionBlock, submit, clearPreviewTimer, message, submitting, selectingLocation, t };';
     const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS } }).outputText;
     const module = { exports: {} }; modules.set(file, module.exports);
     const mockRequire = id => {
@@ -52,18 +61,53 @@ function harness({ cachedContact = contact, privacyAuthorized = true } = {}) {
       if (id.startsWith('.')) return load(path.resolve(path.dirname(file), id + '.ts'));
       return require(id);
     };
-    new Function('require', 'module', 'exports', 'uni', js)(mockRequire, module, module.exports, uni);
+    new Function('require', 'module', 'exports', 'uni', 'console', js)(mockRequire, module, module.exports, uni, { ...console, log: () => {} });
     return module.exports;
   }
   return {
     location: load(path.join(root, 'utils/delivery-location.ts')),
     page: load(path.join(root, 'pages/checkout/index.vue')),
-    hooks, choices, toasts, cache: () => cache,
+    hooks, choices, toasts, modals, requests, redirects, cache: () => cache,
     async native() {
       await new Promise(resolve => setImmediate(resolve));
       assert.ok(choices.length, 'native location picker was opened');
       return choices.at(-1);
     },
+  };
+}
+
+// Render the real checkout button template to verify its disabled state.
+function mountCheckoutControl(page, template, tag) {
+  const { code, errors } = compileTemplate({ source: template, filename: 'checkout-control.vue', id: 'checkout-control', compilerOptions: { isCustomElement: tag => tag === 'text' } });
+  assert.deepEqual(errors, []);
+  const js = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', js)(id => id === 'vue' ? vue : require(id), module, module.exports);
+  const renderer = vue.createRenderer({
+    createElement: type => ({ type, props: {}, children: [] }),
+    createText: text => ({ type: 'text', text }),
+    createComment: text => ({ type: 'comment', text }),
+    setText: (node, text) => { node.text = text; },
+    setComment: (node, text) => { node.text = text; },
+    setElementText: (node, text) => { node.text = text; },
+    patchProp: (node, key, previous, next) => {
+      node.props[key] = next;
+      if (key === 'value' && !node.stale) node.displayedValue = next;
+    },
+    insert: (node, parent) => { node.parent = parent; parent.children.push(node); },
+    remove: node => { node.parent.children.splice(node.parent.children.indexOf(node), 1); },
+    parentNode: node => node.parent,
+    nextSibling: () => null,
+  });
+  const container = { children: [] };
+  const app = renderer.createApp({ setup: () => page, render: module.exports.render });
+  app.mount(container);
+  return {
+    node: () => container.children.find(node => node.type === tag),
+    input(node, value) {
+      node.props.onInput({ detail: { value }, currentTarget: { dataset: { addressRevision: node.props['data-address-revision'] } } });
+    },
+    unmount: () => app.unmount(),
   };
 }
 
@@ -218,4 +262,83 @@ test('manual details survive returning to checkout and GPS is included in length
   assert.equal(h.page.buildOrderRequest().deliveryAddress, '园区北门，3 栋入口\nGPS: 21.2810000, 106.1970000');
   h.page.form.deliveryAddress = '长'.repeat(255);
   assert.throws(() => h.page.buildOrderRequest(), /地址过长/);
+});
+
+test('out-of-range delivery cannot be submitted or confirmed through even with an empty address', async () => {
+  for (const address of ['远处收餐点', '']) {
+    const h = harness({ withCart: true, merchantProfile: { deliveryRadiusKm: '5' } });
+    await h.page.bootstrapCheckout(); h.page.clearPreviewTimer();
+    Object.assign(h.page.form, { deliveryAddress: address, deliveryLatitude: 21.4, deliveryLongitude: 106.4 });
+    assert.equal(h.page.deliverySubmissionBlock.value, 'deliveryRangeExceeded');
+    assert.throws(() => h.page.buildOrderRequest(), /deliveryRangeExceeded/);
+    await h.page.submit();
+    assert.equal(h.page.message.value, 'deliveryRangeExceeded');
+    assert.equal(h.modals.length, 0);
+    assert.deepEqual(h.requests, { preview: [], create: [] });
+  }
+});
+
+test('text-only delivery cannot bypass range validation by omitting coordinates', async () => {
+  const h = harness({ withCart: true, cachedContact: { ...contact, deliveryLatitude: undefined, deliveryLongitude: undefined } });
+  await h.page.bootstrapCheckout(); h.page.clearPreviewTimer();
+  await h.page.submit();
+  assert.equal(h.page.deliverySubmissionBlock.value, 'deliveryLocationRequired');
+  assert.equal(h.modals.length, 0);
+  assert.equal(h.requests.create.length, 0);
+});
+
+test('selecting a point within range unlocks checkout and allows exactly one order', async () => {
+  const h = harness({ withCart: true, merchantProfile: { deliveryRadiusKm: '5' } });
+  await h.page.bootstrapCheckout(); h.page.clearPreviewTimer();
+  const template = readFileSync(path.join(root, 'pages/checkout/index.vue'), 'utf8').match(/<button class="submit"[\s\S]*?<\/button>/)[0];
+  const button = mountCheckoutControl(h.page, template, 'button');
+  assert.equal(button.node().props.disabled, false);
+  Object.assign(h.page.form, { deliveryLatitude: 21.4, deliveryLongitude: 106.4 });
+  await vue.nextTick();
+  assert.equal(button.node().props.disabled, true);
+  await h.page.submit();
+  const choosing = h.page.chooseLocation();
+  (await h.native()).success({ latitude: 21.282, longitude: 106.198, address: '范围内入口', name: '' });
+  await choosing; h.page.clearPreviewTimer();
+  assert.equal(h.page.deliverySubmissionBlock.value, '');
+  assert.equal(h.page.message.value, '');
+  assert.equal(button.node().props.disabled, false);
+  await button.node().props.onClick();
+  assert.equal(h.requests.preview.length, 1);
+  assert.equal(h.requests.create.length, 1);
+  assert.equal(h.requests.create[0].deliveryLatitude, 21.282);
+  assert.equal(h.page.message.value, '');
+  assert.deepEqual(h.redirects, [{ url: '/pages/order/detail?id=fixture' }]);
+  button.unmount();
+});
+
+test('a rejected server delivery preview never falls through to order creation', async () => {
+  for (const text of ['配送地址超出商家配送范围，请重新选择地址', 'Network Error']) {
+    const h = harness({ withCart: true, previewError: new Error(text) });
+    await h.page.bootstrapCheckout(); h.page.clearPreviewTimer();
+    await h.page.submit();
+    assert.equal(h.requests.preview.length, 1);
+    assert.equal(h.requests.create.length, 0);
+    assert.equal(h.page.message.value, text);
+  }
+});
+
+test('zero delivery radius only permits the exact merchant location', async () => {
+  const h = harness({ merchantProfile: { deliveryRadiusKm: '0' } });
+  await h.page.bootstrapCheckout();
+  assert.equal(h.page.deliverySubmissionBlock.value, '');
+  h.page.form.deliveryLatitude = 21.282;
+  assert.equal(h.page.deliverySubmissionBlock.value, 'deliveryRangeExceeded');
+});
+
+test('pickup and dine-in remain available when delivery coordinates are absent or far away', async () => {
+  for (const orderType of ['PICKUP', 'DINE_IN']) {
+    const h = harness({ withCart: true, orderType, cachedContact: { ...contact, deliveryLatitude: 21.4, deliveryLongitude: 106.4 } });
+    await h.page.bootstrapCheckout(); h.page.clearPreviewTimer();
+    assert.equal(h.page.deliverySubmissionBlock.value, '');
+    await h.page.submit();
+    assert.equal(h.requests.create.length, 1);
+    assert.equal(h.page.message.value, '');
+    assert.equal(h.redirects.length, 1);
+  }
 });

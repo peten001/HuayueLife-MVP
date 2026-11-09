@@ -178,7 +178,7 @@ const zh = {
   noMerchants: '商家陆续入驻中',
   noMerchantsHint: '云桥 Life 正在接入北宁、北江本地商家，更多服务即将开放。',
   locationPermissionRequired: '需要开启定位才能查看附近好店',
-  deliveryLocationRequired: '请选择配送地址后再继续',
+  deliveryLocationRequired: '请先在地图选择收餐位置，以校验配送范围',
   noOrders: '暂无订单',
   ordersSubtitle: '随时查看点餐进度',
   ordersEmptyHint: '去附近餐厅看看吧',
@@ -421,7 +421,8 @@ const zh = {
   orderRemarkPlaceholder: '口味、餐具等备注',
   contactPlaceholder: '请输入联系人',
   phonePlaceholder: '请输入手机号',
-  deliveryRangeExceeded: '当前地址可能超出商家配送范围，商家确认后可能无法配送',
+  deliveryRangeExceeded: '当前地址超出商家配送范围，无法下单，请重新选择地址',
+  deliveryRangeUnavailable: '暂时无法校验商家配送范围，请稍后重试',
   deliveryAddressPlaceholder: '请输入详细配送地址',
   contactCacheHint: '已自动带入上次填写信息，可直接修改',
   useCurrentLocation: '可选：使用当前位置',
@@ -682,7 +683,7 @@ const vi: typeof zh = {
   noMerchants: 'Các cửa hàng đang tham gia',
   noMerchantsHint: '云桥 Life đang kết nối các cửa hàng địa phương tại Bắc Ninh và Bắc Giang. Nhiều dịch vụ sẽ sớm được mở.',
   locationPermissionRequired: 'Cần bật định vị để xem các quán gần bạn',
-  deliveryLocationRequired: 'Vui lòng chọn địa chỉ giao hàng trước khi tiếp tục',
+  deliveryLocationRequired: 'Vui lòng chọn điểm nhận món trên bản đồ để kiểm tra phạm vi giao hàng.',
   noOrders: 'Chưa có đơn hàng',
   ordersSubtitle: 'Theo dõi tiến độ gọi món bất cứ lúc nào',
   ordersEmptyHint: 'Khám phá nhà hàng gần bạn',
@@ -926,7 +927,8 @@ const vi: typeof zh = {
   orderRemarkPlaceholder: 'Ghi chú về khẩu vị, dụng cụ...',
   contactPlaceholder: 'Nhập người liên hệ',
   phonePlaceholder: 'Nhập số điện thoại',
-  deliveryRangeExceeded: 'Địa chỉ hiện tại có thể nằm ngoài phạm vi giao hàng của cửa hàng, cửa hàng có thể không giao được sau khi xác nhận',
+  deliveryRangeExceeded: 'Địa chỉ nằm ngoài phạm vi giao hàng. Không thể đặt đơn, vui lòng chọn địa chỉ khác.',
+  deliveryRangeUnavailable: 'Chưa thể kiểm tra phạm vi giao hàng. Vui lòng thử lại sau.',
   deliveryAddressPlaceholder: 'Nhập địa chỉ giao hàng chi tiết',
   contactCacheHint: 'Đã tự động điền thông tin đã nhập gần nhất, có thể sửa trực tiếp',
   useCurrentLocation: 'Tùy chọn: dùng vị trí hiện tại',
@@ -1185,7 +1187,7 @@ const en: typeof zh = {
   noMerchants: 'Merchants are joining soon',
   noMerchantsHint: 'Yunqiao Life is adding local merchants in Bac Ninh and Bac Giang. More services are coming soon.',
   locationPermissionRequired: 'Please enable location to view nearby restaurants',
-  deliveryLocationRequired: 'Please choose a delivery address before continuing',
+  deliveryLocationRequired: 'Please select a delivery point on the map to check the delivery range.',
   noOrders: 'No orders yet',
   ordersSubtitle: 'Track your food orders anytime',
   ordersEmptyHint: 'Explore nearby restaurants',
@@ -1429,7 +1431,8 @@ const en: typeof zh = {
   orderRemarkPlaceholder: 'Notes for taste, utensils, etc.',
   contactPlaceholder: 'Enter contact name',
   phonePlaceholder: 'Enter phone number',
-  deliveryRangeExceeded: 'The current address may be outside the merchant delivery range. The merchant may not be able to deliver after confirmation.',
+  deliveryRangeExceeded: 'This address is outside the delivery range. You cannot place this order. Please choose another address.',
+  deliveryRangeUnavailable: 'The delivery range cannot be checked right now. Please try again later.',
   deliveryAddressPlaceholder: 'Enter detailed delivery address',
   contactCacheHint: 'Previously entered info has been auto-filled and can be edited',
   useCurrentLocation: 'Optional: use current location',
@@ -1983,12 +1986,14 @@ export function translateApiError(raw: unknown) {
     raw.includes('must be a number conforming to the specified constraints') ||
     raw.includes('配送经纬度必须同时提供')
   ) {
-    return '地址不完整时，商家会电话联系你确认';
+    return t('deliveryLocationRequired');
   }
   if (raw.includes('请填写配送地址')) return '地址不完整时，商家会电话联系你确认';
   if (raw.includes('配送地址超出商家配送范围')) {
-    return '当前位置可能超出商家配送范围，商家确认后可能无法配送';
+    return t('deliveryRangeExceeded');
   }
+  if (raw.includes('请选择有效的配送收餐位置')) return t('deliveryLocationRequired');
+  if (raw.includes('商家配送范围暂时无法校验')) return t('deliveryRangeUnavailable');
   if (raw.includes('缺少购物车上下文')) return t('missingCartContext');
   if (raw.includes('菜单加载失败')) return t('menuLoadFailed');
   if (raw.includes('商家加载失败')) return t('merchantLoadFailed');
