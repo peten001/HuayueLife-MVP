@@ -1,8 +1,8 @@
-import { BadRequestException, Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { BadRequestException, Controller, Post, UploadedFile, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../../common/guards/platform-admin.guard';
-import { PlatformUploadsService } from './platform-uploads.service';
+import { PlatformUploadsService, UploadedImage } from './platform-uploads.service';
+import { PlatformUpload } from './platform-upload.interceptor';
 
 @Controller('platform/uploads')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
@@ -10,22 +10,10 @@ export class PlatformUploadsController {
   constructor(private readonly service: PlatformUploadsService) {}
 
   @Post('merchant-image')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: {
-        // Busboy emits its limit event at equality; the service enforces <= 20MB.
-        fileSize: 20 * 1024 * 1024 + 1,
-      },
-    }),
-  )
+  @PlatformUpload()
   uploadMerchantImage(
     @UploadedFile()
-    file?: {
-      buffer: Buffer;
-      mimetype: string;
-      originalname: string;
-      size?: number;
-    },
+    file?: UploadedImage,
   ) {
     if (!file) {
       throw new BadRequestException('Image file is required');

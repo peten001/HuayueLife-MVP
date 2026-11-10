@@ -641,9 +641,7 @@ export class PlatformWorkbenchService {
     await this.prisma.$queryRaw`SELECT 1`;
     return { api: "ok", database: "ok", checkedAt: new Date().toISOString() };
   }
-  async createDraft(nameZh: string, city: string) {
-    if (!nameZh?.trim() || !city?.trim())
-      throw new BadRequestException("店名和城市为必填项");
+  async createDraft(nameZh = "", city = "") {
     const capabilities = await this.prisma.capability.findMany({
       where: { enabled: true },
       select: { id: true, code: true },
@@ -660,7 +658,7 @@ export class PlatformWorkbenchService {
             ),
           })),
         },
-        nameZh: nameZh.trim(),
+        nameZh: nameZh.trim() || "未命名商家",
         city: city.trim(),
         province: city.trim(),
         contactName: "",
@@ -797,10 +795,12 @@ export class PlatformWorkbenchService {
             throw new ConflictException(
               "资料已被其他操作更新，请重新加载后核对",
             );
+          const currentProfile = this.snapshot(merchant).profile;
           const profile = Object.fromEntries(
             editable
-              .filter((field) => field in input.profile)
-              .map((field) => [field, input.profile[field]]),
+              .map((field) => [field, field in input.profile
+                ? input.profile[field]
+                : currentProfile[field]]),
           );
           const draft = {
             signatureDishes:
@@ -832,44 +832,8 @@ export class PlatformWorkbenchService {
                 where: { id: BigInt(String(profile.businessTypeId)) },
               })
             : null;
-          if (!type?.enabled) throw new BadRequestException("请选择有效行业");
-          const missing = merchantPublishMissing(
-            draft,
-            type.code,
-            merchant._count.products,
-            merchant.signatureDishes.filter((i) => i.isVisible).length,
-            merchant._count.serviceItems ?? 0,
-            merchant.claimStatus === "CLAIMED",
-          );
-          if (missing.length)
-            throw new BadRequestException(
-              `发布前请完善：${missing.join("、")}`,
-            );
-          if (
-            merchantContentTemplate(type.code) === "RESTAURANT" &&
-            draft.signatureDishes?.some(
-              (item) =>
-                item.isVisible &&
-                (!item.nameZh.trim() || !item.imageUrl?.trim()),
-            ) &&
-            merchant.claimStatus !== "CLAIMED"
-          )
-            throw new BadRequestException(
-              "请完善公开招牌菜的名称与照片，或先隐藏该项目",
-            );
-          if (
-            merchantContentTemplate(type.code) !== "RESTAURANT" &&
-            draft.serviceItems?.some(
-              (item) =>
-                item.isVisible &&
-                (!item.nameZh.trim() ||
-                  ((item.priceMode || "INQUIRY") !== "INQUIRY" &&
-                    !/^\d{1,12}$/.test(item.amountVnd || ""))),
-            )
-          )
-            throw new BadRequestException(
-              "请完善公开服务项目的名称和价格，未知价格可选择询价",
-            );
+          if (profile.businessTypeId && !type)
+            throw new BadRequestException("所选行业不存在，请重新选择或留空");
           const data: Prisma.MerchantUpdateInput = {};
           for (const field of editable) {
             if (
@@ -887,14 +851,15 @@ export class PlatformWorkbenchService {
                 profile[field] ?? "",
               ).trim();
           }
-          data.businessType = { connect: { id: type.id } };
-          const contentType = merchantContentTemplate(type.code);
-          data.merchantType =
+          data.businessType = type ? { connect: { id: type.id } } : { disconnect: true };
+          data.nameZh = String(profile.nameZh ?? "").trim() || "未命名商家";
+          const contentType = merchantContentTemplate(type?.code, merchant.merchantType);
+          data.merchantType = type ? (
             contentType === "SERVICE" || contentType === "GENERAL"
               ? "SERVICE"
               : contentType === "RETAIL"
                 ? "RETAIL"
-                : "RESTAURANT";
+                : "RESTAURANT") : merchant.merchantType;
           if (
             merchant.status === "PENDING" &&
             !merchant.homepageCategoryKeys?.includes('"')
@@ -909,11 +874,13 @@ export class PlatformWorkbenchService {
               CONVENIENCE_MARKET: "convenience_store",
             };
             data.homepageCategoryKeys = JSON.stringify(
-              keys[type.code] ? [keys[type.code]] : [],
+              type && keys[type.code] ? [keys[type.code]] : [],
             );
           }
-          data.latitude = Number(profile.latitude);
-          data.longitude = Number(profile.longitude);
+          const hasLocation = profile.latitude !== "" && profile.latitude != null
+            && profile.longitude !== "" && profile.longitude != null;
+          data.latitude = hasLocation ? Number(profile.latitude) : 0;
+          data.longitude = hasLocation ? Number(profile.longitude) : 0;
           try {
             data.businessHours = json(
               validateBusinessHoursSchedule(profile.businessHours || {}),
@@ -923,8 +890,10 @@ export class PlatformWorkbenchService {
               "营业时间格式不正确，请核对每周时段及跨天重叠",
             );
           }
-          data.addressDetail = String(profile.addressZh);
-          data.province = String(profile.province || profile.city);
+          data.addressDetail = String(profile.addressZh ?? "");
+          data.province = String(merchant.status === "PENDING" || String(profile.city ?? "") !== merchant.city
+            ? profile.city ?? ""
+            : profile.province ?? profile.city ?? "").trim();
           data.isVisibleOnClient = profile.isVisibleOnClient !== false;
           data.status =
             merchant.status === "PENDING" ? "ACTIVE" : merchant.status;
@@ -1052,7 +1021,7 @@ export class PlatformWorkbenchService {
                 descriptionEn: item.descriptionEn?.trim() || null,
                 imageUrl: item.imageUrl || null,
                 durationMinutes: item.durationMinutes ?? null,
-                priceMode: item.priceMode || "INQUIRY",
+                priceMode: item.amountVnd ? item.priceMode || "INQUIRY" : "INQUIRY",
                 amountVnd:
                   item.priceMode === "INQUIRY" || !item.amountVnd
                     ? null
@@ -1114,11 +1083,6 @@ export class PlatformWorkbenchService {
       !Array.isArray(input.images)
     )
       throw new BadRequestException("草稿格式不正确");
-    if (
-      !String(input.profile.nameZh ?? "").trim() ||
-      !String(input.profile.city ?? "").trim()
-    )
-      throw new BadRequestException("店名和城市为必填项");
     const limits: Record<string, number> = {
       nameZh: 120,
       nameVi: 120,
@@ -1138,6 +1102,11 @@ export class PlatformWorkbenchService {
       descriptionVi: 20000,
       descriptionEn: 20000,
     };
+    for (const [field, max] of [["latitude", 90], ["longitude", 180]] as const) {
+      const value = input.profile[field];
+      if (value != null && value !== "" && (!Number.isFinite(Number(value)) || Math.abs(Number(value)) > max))
+        throw new BadRequestException("定位格式不正确，可以留空后补");
+    }
     for (const [field, max] of Object.entries(limits))
       if (
         input.profile[field] != null &&

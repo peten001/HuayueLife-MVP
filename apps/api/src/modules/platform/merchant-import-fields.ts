@@ -27,11 +27,11 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'nameZh',
     label: '中文店名',
-    required: true,
-    description: '商家的中文显示名称',
-    format: '文本，2-120 字符',
+    required: false,
+    description: '可后补，留空时使用未命名商家',
+    format: '选填文本，最多 120 字符',
     correctExample: '688便利店',
-    wrongExample: '空白',
+    wrongExample: '超出字段长度',
     textFormat: true,
   },
   {
@@ -39,9 +39,9 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
     label: '越南语店名',
     required: false,
     description: '商家的越南语显示名称',
-    format: '文本，2-120 字符',
+    format: '选填文本，最多 120 字符',
     correctExample: 'Cua hang tien loi 688',
-    wrongExample: '空白',
+    wrongExample: '超出字段长度',
     textFormat: true,
   },
   {
@@ -49,9 +49,9 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
     label: '英文店名',
     required: false,
     description: '商家的英文显示名称',
-    format: '文本，2-120 字符',
+    format: '选填文本，最多 120 字符',
     correctExample: '688 Convenience Store',
-    wrongExample: '空白',
+    wrongExample: '超出字段长度',
     textFormat: true,
   },
   {
@@ -88,11 +88,11 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
   {
     key: 'province',
     label: '省/直辖市',
-    required: true,
+    required: false,
     description: '商家所在省或直辖市名称',
     format: '文本，1-80 字符',
     correctExample: 'Bac Giang',
-    wrongExample: '空白',
+    wrongExample: '超出字段长度',
     textFormat: true,
   },
   {
@@ -102,7 +102,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
     description: '商家的中文详细地址',
     format: '文本，1-255 字符',
     correctExample: '北江省越安县云中工业区商业街18号',
-    wrongExample: '空白',
+    wrongExample: '超出字段长度',
     textFormat: true,
   },
   {

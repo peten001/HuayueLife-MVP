@@ -93,9 +93,6 @@ async function upload(item: DisplayItem, file: File) {
   emit("busy", true);
   message.value = "";
   try {
-    if (file.size > 20 * 1024 * 1024) throw new Error("单张图片不能超过 20MB");
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
-      throw new Error("请选择 JPEG、PNG 或 WebP 图片");
     const result = await uploadPlatformMerchantImage(file);
     const current = props.modelValue.find((row) =>
       item.id ? row.id === item.id : row.clientKey === item.clientKey,
@@ -330,7 +327,7 @@ function choose(item: DisplayItem, event: Event) {
               >{{ $pt(uploading ? "正在优化…" : "选择项目图片")
               }}<input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 :disabled="!!uploading"
                 @change="choose(item, $event)" /></label
             ><label class="p-inline"

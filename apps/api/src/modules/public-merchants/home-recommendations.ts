@@ -117,7 +117,7 @@ function alternativeSceneCopy(kind: RecommendationKind) {
 
 export function buildHomeRecommendations<T extends RecommendationMerchant>(candidates: RecommendationCandidate<T>[], region: string | null, gps: boolean, at = new Date()) {
   const period = recommendationPeriod(at);
-  const regional = region ? candidates.filter(item => item.merchant.province === region) : [];
+  const regional = region ? candidates.filter(item => !item.merchant.province || item.merchant.province === region) : [];
   const spotlights = (['FOOD', 'COFFEE'] as const).flatMap(kind => {
     const chosen = ranked(regional, kind, gps, false)[0];
     return chosen ? [entry(chosen, kind, gps)] : [];

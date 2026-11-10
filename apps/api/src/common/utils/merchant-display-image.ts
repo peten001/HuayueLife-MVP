@@ -36,7 +36,7 @@ export function isCurrentMerchantDisplayImageUrl(url?: string | null) {
 }
 
 export async function optimizeMerchantDisplayImage(
-  input: Buffer,
+  input: Buffer | string,
 ): Promise<OptimizedMerchantDisplayImage> {
   let latest: OptimizedMerchantDisplayImage | null = null;
   for (const attempt of ENCODE_ATTEMPTS) {

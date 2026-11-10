@@ -564,7 +564,7 @@ export class PlatformContentService {
         : [];
     });
     const rows = await this.prisma.merchant.findMany({
-      where: { status: "ACTIVE", isVisibleOnClient: true, province: city },
+      where: { status: "ACTIVE", isVisibleOnClient: true, OR: [{ province: city }, { province: "" }] },
       include: {
         businessType: true,
         images: {

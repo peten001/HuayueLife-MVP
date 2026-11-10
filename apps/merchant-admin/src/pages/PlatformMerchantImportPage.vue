@@ -221,13 +221,13 @@ onBeforeRouteLeave(() => {
       <p class="hint">
         {{
           $pt(
-            "仅店名与城市必填，其余资料可在草稿中补齐。支持 XLSX，或包含 XLSX 与照片的 ZIP。照片每张最多 20MB，上传后自动优化且不永久保留原图。",
+            "资料均可后补。支持 XLSX，或包含 XLSX 与照片的 ZIP。导入包和照片不设大小上限，照片自动优化且不永久保留原图。",
           )
         }}
       </p>
       <div class="p-import-drop">
         <h3>{{ $pt("选择导入文件") }}</h3>
-        <p>{{ $pt("导入包最多 50MB · 照片使用 ZIP 内相对路径") }}</p>
+        <p>{{ $pt("导入包不设大小上限 · 照片使用 ZIP 内相对路径") }}</p>
         <label class="p-upload-button"
           >{{ busy ? $pt("正在预检查…") : $pt("选择 XLSX / ZIP")
           }}<input

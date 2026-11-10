@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { createHash } from 'node:crypto';
+import { createReadStream, statSync } from 'node:fs';
 import sharp = require('sharp');
 import {
   MERCHANT_DISPLAY_IMAGE_SPEC_VERSION,
@@ -11,7 +12,8 @@ import {
 } from '../../common/utils/merchant-display-image';
 
 export type UploadedImage = {
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
   mimetype: string;
   originalname: string;
   size?: number;
@@ -22,24 +24,17 @@ export type SaveMerchantImageOptions = {
   rootDir?: string;
 };
 
-const MIME_TO_EXTENSION: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/webp': '.webp',
-};
-
-const EXTENSION_TO_MIME: Record<string, string> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-};
-
-const SHARP_FORMAT_TO_MIME: Record<string, keyof typeof MIME_TO_EXTENSION> = {
+const SHARP_FORMAT_TO_MIME: Record<string, string> = {
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
   png: 'image/png',
   webp: 'image/webp',
+  gif: 'image/gif',
+  tiff: 'image/tiff',
+  heif: 'image/heif',
+  avif: 'image/avif',
+  svg: 'image/svg+xml',
+  jp2: 'image/jp2',
 };
 
 @Injectable()
@@ -49,21 +44,9 @@ export class PlatformUploadsService {
       throw new BadRequestException('Image file is required');
     }
 
-    const extension = MIME_TO_EXTENSION[file.mimetype];
-    if (!extension) {
-      throw new BadRequestException('Invalid image type');
-    }
-
-    const originalExtension = extname(file.originalname || '').toLowerCase();
-    const originalMime = EXTENSION_TO_MIME[originalExtension];
-    if (!originalExtension || !originalMime || originalMime !== file.mimetype) {
-      throw new BadRequestException('Invalid image type');
-    }
-
-    const fileSize = Math.max(file.size ?? 0, file.buffer.byteLength);
-    if (fileSize > 20 * 1024 * 1024) {
-      throw new BadRequestException('Image file exceeds 20MB');
-    }
+    if (!file.buffer && !file.path) throw new BadRequestException('Image file is required');
+    const extension = extname(file.originalname || '').toLowerCase();
+    const fileSize = Math.max(file.size ?? 0, file.buffer?.byteLength ?? (file.path ? statSync(file.path).size : 0));
 
     return {
       extension,
@@ -72,7 +55,7 @@ export class PlatformUploadsService {
     };
   }
 
-  async detectMerchantImageMime(buffer: Buffer) {
+  async detectMerchantImageMime(buffer: Buffer | string) {
     try {
       const metadata = await sharp(buffer).metadata();
       if (!metadata.format) {
@@ -92,19 +75,20 @@ export class PlatformUploadsService {
   }
 
   async saveMerchantImage(file: UploadedImage, options: SaveMerchantImageOptions = {}) {
-    const { fileSize, mimeType } = this.validateMerchantImage(file);
-    const detectedMime = await this.detectMerchantImageMime(file.buffer);
-    if (detectedMime !== mimeType) {
-      throw new BadRequestException('Image content does not match file type');
-    }
+    const { fileSize } = this.validateMerchantImage(file);
+    const input = file.buffer ?? file.path!;
+    await this.detectMerchantImageMime(input);
 
     let optimized;
     try {
-      optimized = await optimizeMerchantDisplayImage(file.buffer);
+      optimized = await optimizeMerchantDisplayImage(input);
     } catch {
       throw new BadRequestException('Invalid image content');
     }
-    const sourceHash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 24);
+    const hash = createHash('sha256');
+    if (file.buffer) hash.update(file.buffer);
+    else for await (const chunk of createReadStream(file.path!)) hash.update(chunk);
+    const sourceHash = hash.digest('hex').slice(0, 24);
     const fileName = `merchant-${sourceHash}-display-${MERCHANT_DISPLAY_IMAGE_SPEC_VERSION}.webp`;
     const cardImage = await optimizeMerchantCardImage(optimized.buffer);
     const targetDir = join(options.rootDir ?? process.cwd(), 'public', 'uploads', 'merchants');

@@ -359,7 +359,6 @@ async function upload(event: Event) {
   if (!file || !form.value) return;
   busy.value = true;
   try {
-    if (file.size > 20 * 1024 * 1024) throw new Error("单张图片不能超过 20MB");
     form.value.imageUrl = (await uploadPlatformMerchantImage(file)).imageUrl;
   } catch (e) {
     message.value = errorMessage(e);
@@ -573,7 +572,7 @@ onMounted(load);
               :alt="$pt('专题封面')"
             /><input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/*"
               @change="upload"
             />
             <div class="p-form-grid" style="margin-top: 24px">

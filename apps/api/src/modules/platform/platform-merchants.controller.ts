@@ -10,9 +10,9 @@ import {
   Res,
   UploadedFile,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { PlatformUpload } from './platform-upload.interceptor';
+import type { UploadedImage } from './platform-uploads.service';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../../common/guards/platform-admin.guard';
@@ -84,21 +84,10 @@ export class PlatformMerchantsController {
   }
 
   @Post('import-preview')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: {
-        fileSize: 50 * 1024 * 1024 + 1,
-      },
-    }),
-  )
+  @PlatformUpload()
   importPreview(
     @UploadedFile()
-    file?: {
-      buffer: Buffer;
-      mimetype: string;
-      originalname: string;
-      size?: number;
-    },
+    file?: UploadedImage,
   ): Promise<MerchantImportPreviewResponse> {
     return this.service.previewMerchantImport(file);
   }
@@ -161,46 +150,31 @@ export class PlatformMerchantsController {
   }
 
   @Post(':id/images/:imageId/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
+  @PlatformUpload()
   replaceImage(
     @Param('id') id: string,
     @Param('imageId') imageId: string,
-    @UploadedFile() file?: {
-      buffer: Buffer;
-      mimetype: string;
-      originalname: string;
-      size?: number;
-    },
+    @UploadedFile() file?: UploadedImage,
   ) {
     return this.service.replaceImage(BigInt(id), BigInt(imageId), file);
   }
 
   @Post(':id/images/:imageType/upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
+  @PlatformUpload()
   uploadImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,
-    @UploadedFile() file?: {
-      buffer: Buffer;
-      mimetype: string;
-      originalname: string;
-      size?: number;
-    },
+    @UploadedFile() file?: UploadedImage,
   ) {
     return this.service.createUploadedImage(BigInt(id), imageType, file);
   }
 
   @Post(':id/primary-images/:imageType/replace')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 + 1 } }))
+  @PlatformUpload()
   replacePrimaryImage(
     @Param('id') id: string,
     @Param('imageType') imageType: string,
-    @UploadedFile() file?: {
-      buffer: Buffer;
-      mimetype: string;
-      originalname: string;
-      size?: number;
-    },
+    @UploadedFile() file?: UploadedImage,
   ) {
     return this.service.replacePrimaryImage(BigInt(id), imageType, file);
   }

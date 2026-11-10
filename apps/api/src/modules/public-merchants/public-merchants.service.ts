@@ -122,7 +122,7 @@ export class PublicMerchantsService {
     const gps = Number.isFinite(query.lat) && Number.isFinite(query.lng);
     if (!region) return buildHomeRecommendations([], null, false, now);
     const rows = await this.prisma.merchant.findMany({
-      where: { status: 'ACTIVE', isVisibleOnClient: true, province: region },
+      where: { status: 'ACTIVE', isVisibleOnClient: true, OR: [{ province: region }, { province: '' }] },
       include: {
         businessType: true,
         promotionTags: { where: { promotionTag: { enabled: true } }, include: { promotionTag: true } },
@@ -165,7 +165,7 @@ export class PublicMerchantsService {
       isVisibleOnClient: true,
     };
     if (selectedOperationalRegion) {
-      where.province = selectedOperationalRegion;
+      where.OR = [{ province: selectedOperationalRegion }, { province: '' }];
     }
     if (query.businessTypeId) {
       where.businessTypeId = BigInt(query.businessTypeId);

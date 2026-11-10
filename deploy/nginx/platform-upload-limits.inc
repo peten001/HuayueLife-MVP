@@ -1,4 +1,3 @@
-# Include in the admin API server/location block during deployment.
-# Multipart source images: API enforces 20MB each. ZIP imports: API enforces 50MB.
-# Leave room for multipart headers; do not alter unrelated upstream/body timeouts.
-client_max_body_size 55m;
+# Platform uploads have no request-size business limit.
+# Apply only to platform upload/import locations; keep other endpoints unchanged.
+client_max_body_size 0;

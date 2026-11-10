@@ -1541,15 +1541,6 @@ async function buildZipBuffer(
 
 
 describe('Explore V1 display merchant creation', () => {
-  it('rejects a blank Chinese name before touching dictionaries or the database', async () => {
-    const ensureDefaults = jest.fn();
-    const transaction = jest.fn();
-    const service = new PlatformMerchantsService({ $transaction: transaction } as never, { ensureDefaults } as never, {} as never, buildAppConfigMock() as never, buildPrintingFlagsMock() as never);
-    await expect(service.createDisplayMerchant({ businessTypeId: '2', nameZh: '   ', nameVi: '', nameEn: '', contactName: '验收', contactPhone: '0900000000', province: '北江', addressZh: '本地验收', latitude: 21, longitude: 106 })).rejects.toThrow('请填写商家中文名称');
-    expect(ensureDefaults).not.toHaveBeenCalled();
-    expect(transaction).not.toHaveBeenCalled();
-  });
-
   it.each([['MASSAGE_SPA', 'SERVICE'], ['HOTEL', 'SERVICE'], ['KTV', 'SERVICE'], ['FLOWER_GIFT', 'RETAIL'], ['CHINESE_RESTAURANT', 'RESTAURANT']])(
     'creates %s with an explicit legacy type and all ordering flags off', async (code, expectedType) => {
       const create = jest.fn(async ({ data }) => ({ ...data, id: 99n }));

@@ -304,7 +304,8 @@ type DictionaryRef = {
 };
 
 type UploadedFileLike = {
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
   mimetype: string;
   originalname: string;
   size?: number;
@@ -352,7 +353,7 @@ const PREPARING_STATUSES: OrderStatus[] = [
 const IMPORT_TEMPLATE_SHEET_NAME = '商家导入模板';
 const IMPORT_INSTRUCTIONS_SHEET_NAME = '填写说明';
 const IMPORT_OPTIONS_SHEET_NAME = 'Options';
-const IMPORT_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'] as const;
+const IMPORT_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'tif', 'tiff', 'heic', 'heif', 'svg', 'bmp', 'jp2'] as const;
 
 const DEFAULT_BUSINESS_HOURS = {
   monday: ['10:00-22:00'],
@@ -757,7 +758,6 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createDisplayMerchant(dto: CreateDisplayMerchantDto) {
-    if (!dto.nameZh.trim()) throw new BadRequestException('请填写商家中文名称');
     await this.dictionaries.ensureDefaults();
     const businessTypeId = dto.businessTypeId ? await this.resolveBusinessTypeId(dto.businessTypeId) : null;
     const businessHours =
@@ -782,7 +782,7 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
       const created = await tx.merchant.create({
         data: {
           businessTypeId,
-          nameZh: dto.nameZh.trim(),
+          nameZh: dto.nameZh.trim() || '未命名商家',
           nameVi: dto.nameVi.trim(),
           nameEn: dto.nameEn.trim(),
           merchantType: template === 'SERVICE' || template === 'GENERAL' ? 'SERVICE' : template === 'RETAIL' ? 'RETAIL' : 'RESTAURANT',
@@ -1879,13 +1879,13 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
       return {
         sourceType: 'XLSX',
         tempDir: null,
-        records: await this.readMerchantImportWorkbook(file.buffer),
+        records: await this.readMerchantImportWorkbook(file.buffer ?? file.path!),
       };
     }
 
     const tempDir = await mkdtemp(join(tmpdir(), 'huayue-merchant-import-'));
     try {
-      const workbookBuffer = await this.extractMerchantImportZip(file.buffer, tempDir);
+      const workbookBuffer = await this.extractMerchantImportZip(file.buffer ?? file.path!, tempDir);
       return {
         sourceType: 'ZIP',
         tempDir,
@@ -1897,7 +1897,7 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async extractMerchantImportZip(buffer: Buffer, tempDir: string) {
+  private async extractMerchantImportZip(buffer: Buffer | string, tempDir: string) {
     let archive: AdmZip;
     try {
       archive = new AdmZip(buffer);
@@ -1926,10 +1926,11 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
     return readFile(resolveZipEntryPath(tempDir, xlsxEntries[0].entryName));
   }
 
-  private async readMerchantImportWorkbook(buffer: Buffer) {
+  private async readMerchantImportWorkbook(buffer: Buffer | string) {
     const workbook = new ExcelJS.Workbook();
     try {
-      await workbook.xlsx.load(buffer);
+      if (typeof buffer === 'string') await workbook.xlsx.readFile(buffer);
+      else await workbook.xlsx.load(buffer);
     } catch {
       throw new BadRequestException('XLSX 文件无法解析，请检查模板和文件内容');
     }
@@ -2051,7 +2052,7 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
     const rawBusinessType = normalizeImportText(rawData.businessType);
 
     validateImportStringField(errors, rowNumber, 'nameZh', rawData.nameZh, normalized.nameZh, {
-      required: true,
+      required: false,
       maxLength: 120,
       example: '688便利店',
     });
@@ -2094,7 +2095,7 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
       example: 'Nguyen Van A',
     });
     validateImportStringField(errors, rowNumber, 'province', rawData.province, normalized.province, {
-      required: true,
+      required: false,
       maxLength: 80,
       example: 'Bac Giang',
     });
@@ -2293,10 +2294,7 @@ export class PlatformMerchantsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async saveValidatedMerchantImage(file: UploadedImage) {
-    const detectedMime = await this.uploads.detectMerchantImageMime(file.buffer);
-    if (detectedMime !== file.mimetype) {
-      throw new BadRequestException('Image content does not match file type');
-    }
+    await this.uploads.detectMerchantImageMime(file.buffer ?? file.path!);
     return this.uploads.saveMerchantImage(file);
   }
 
@@ -3227,9 +3225,6 @@ function extractExceptionMessage(error: BadRequestException) {
 }
 
 function localizeImportExceptionMessage(message: string) {
-  if (message === 'Image file exceeds 20MB') {
-    return '图片文件不能超过 20MB';
-  }
   if (message === 'Invalid image type' || message === 'Invalid image content') {
     return '图片格式无效，仅支持 jpg / jpeg / png / webp';
   }

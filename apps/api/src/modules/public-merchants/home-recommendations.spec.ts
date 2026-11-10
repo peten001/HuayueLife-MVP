@@ -6,6 +6,10 @@ function candidate(id: string, code = 'CHINESE_RESTAURANT', overrides: Partial<R
 const at = (local: string) => new Date(`2026-10-05T${local}:00+07:00`);
 
 describe('Automatic Vietnam home recommendations', () => {
+  it.each(['北江','北宁'])('allows a merchant without a city in %s recommendations',province=>{
+    const result=buildHomeRecommendations([candidate('all','CHINESE_RESTAURANT',{province:''})],province,false,at('12:00'));
+    expect(result.spotlights.some(entry=>entry.merchant.id==='all')).toBe(true);
+  });
   it.each([
     ['04:59', 'EVENING', '2026-10-04T22:00:00.000Z'],
     ['05:00', 'BREAKFAST', '2026-10-05T02:00:00.000Z'],

@@ -312,13 +312,21 @@ try {
   await page.getByText("回收站暂无商家", { exact: true }).waitFor();
   report.checks.push("Recycle bin recovery leaves merchant hidden");
   await page.goto(base + "/platform/merchants/new");
-  await page.getByLabel("店名", { exact: true }).fill("仅有店名的本地草稿");
-  await page.getByLabel("城市", { exact: true }).fill("北宁");
   await page
     .getByRole("button", { name: "保存草稿并继续", exact: true })
     .click();
   await page.waitForURL("**/platform/merchants/27");
-  report.checks.push("Draft creation needs only merchant name and city");
+  report.checks.push("Draft creation has no mandatory profile fields");
+  await page.getByRole("button", { name: "标签与发布", exact: true }).click();
+  await page.getByLabel("本次发布后对外展示", { exact: true }).check();
+  await page.getByRole("button", { name: "保存并更新", exact: true }).click();
+  await page.getByText("已保存并更新对外展示", { exact: true }).waitFor();
+  const manualPublication = JSON.parse(report.requests.filter(r => r.url.endsWith("/merchants/27/publish")).at(-1).body);
+  assert.equal(manualPublication.profile.city, "");
+  assert.equal(manualPublication.profile.isVisibleOnClient, true);
+  assert.equal(manualPublication.profile.coverUrl, "");
+  assert.equal(manualPublication.profile.nameVi, "");
+  report.checks.push("Operator can publish without a city, translations, location, cover, industry or menu");
   await page.goto(base + "/platform/merchants/1");
   await page
     .getByRole("button", { name: "图片与展示项目", exact: true })
@@ -499,6 +507,17 @@ try {
   report.checks.push(
     "Claimed merchant retains independent display drafts while its public menu stays merchant-managed",
   );
+  await page.goto(base + "/platform/merchants/27");
+  await page.getByRole("button", { name: "图片与展示项目", exact: true }).click();
+  const uploadsBefore = report.requests.filter(r => r.url.endsWith("/platform/uploads/merchant-image")).length;
+  await page.locator('input[type="file"][multiple]').first().setInputFiles({
+    name: "large-photo.png", mimeType: "image/png", buffer: Buffer.concat([image, Buffer.alloc(21 * 1024 * 1024)])
+  });
+  await page.getByText("已加入草稿", { exact: true }).first().waitFor();
+  assert.equal(report.requests.filter(r => r.url.endsWith("/platform/uploads/merchant-image")).length, uploadsBefore + 1);
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await page.getByText("草稿已保存，当前展示保持原样", {exact:true}).waitFor();
+  report.checks.push("The browser uploads and saves a photo beyond the old 20MB limit");
   report.languageLayouts = [];
   await page.setViewportSize({ width: 1280, height: 900 });
   for (const language of ["en", "vi"]) {

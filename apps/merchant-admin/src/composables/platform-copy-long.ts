@@ -1,4 +1,16 @@
 const entries: Array<[string, string, string]> = [
+  ["资料均可后补，由人工决定是否对外展示。", "Có thể bổ sung thông tin sau; người quản trị quyết định hiển thị.", "All details can be completed later; publication is a manual decision."],
+  ["所有资料均为选填，保存草稿不会展示；是否公开由人工决定。", "Mọi thông tin đều tùy chọn. Lưu nháp không công khai; quản trị viên quyết định xuất bản.", "All details are optional. Saving a draft keeps it private; publication is decided manually."],
+  ["图片不设上传大小和张数上限，自动优化清晰度与体积；服务器仅保存展示图和列表小图。更换图片会先进入草稿。", "Không giới hạn dung lượng hoặc số ảnh; ảnh được tự tối ưu. Chỉ lưu ảnh hiển thị và ảnh thu nhỏ. Ảnh thay thế được lưu nháp trước.", "No image upload size or count limit. Images are optimized; only display images and thumbnails are stored. Replacements enter the draft first."],
+  ["资料是否完整不影响发布。勾选后点击“保存并更新”即可公开；城市留空表示所有城市。", "Không cần hoàn tất hồ sơ để xuất bản. Chọn hiển thị rồi lưu và cập nhật; bỏ trống thành phố để hiển thị ở mọi thành phố.", "Incomplete details do not block publication. Enable visibility and save and update; leave the city blank to display in all cities."],
+  ["可后补资料（不影响发布）", "Thông tin bổ sung sau (không chặn xuất bản)", "Optional details (do not block publication)"],
+  ["留空表示所有城市", "Để trống cho mọi thành phố", "Leave blank for all cities"],
+  ["资料均可后补。支持 XLSX，或包含 XLSX 与照片的 ZIP。导入包和照片不设大小上限，照片自动优化且不永久保留原图。", "Có thể bổ sung thông tin sau. Hỗ trợ XLSX hoặc ZIP chứa XLSX và ảnh. Không giới hạn dung lượng; ảnh tự tối ưu và không giữ bản gốc lâu dài.", "Complete details later. Upload XLSX or ZIP with XLSX and photos. No file size limit; photos are optimized without retaining originals."],
+  ["导入包不设大小上限 · 照片使用 ZIP 内相对路径", "Không giới hạn dung lượng gói nhập · dùng đường dẫn ảnh tương đối trong ZIP", "No import package size limit · use relative photo paths within ZIP"],
+  ["图片不设大小和张数上限，自动优化，不永久保留原图", "Không giới hạn dung lượng hoặc số ảnh; tự tối ưu và không giữ bản gốc lâu dài", "No image size or count limit; optimized without retaining originals"],
+  ["所有资料均可后补，展示与隐藏由人工决定", "Có thể bổ sung mọi thông tin sau; quản trị viên quyết định hiển thị hoặc ẩn", "All details can be completed later; visibility is controlled manually"],
+  ["未命名商家", "Cửa hàng chưa đặt tên", "Unnamed merchant"],
+
   ["扫码点餐", "Đặt món bằng QR", "QR ordering"],
   [
     "一键控制全平台所有商家的扫码点餐、到店自取和商家配送。",

@@ -387,7 +387,6 @@ async function addFiles(event: Event, imageType: string) {
   if (
     imageType !== "COVER" ||
     !files[0] ||
-    files[0].size > 20 * 1024 * 1024 ||
     !["image/jpeg", "image/png", "image/webp"].includes(files[0].type)
   ) {
     await enqueue(files, imageType);
@@ -476,10 +475,6 @@ async function upload(key: number) {
   item.state = "uploading";
   item.error = "";
   try {
-    if (item.file.size > 20 * 1024 * 1024)
-      throw new Error("单张图片不能超过 20MB");
-    if (!["image/jpeg", "image/png", "image/webp"].includes(item.file.type))
-      throw new Error("请选择 JPEG、PNG 或 WebP 图片");
     const result = await uploadPlatformMerchantImage(item.file);
     if (item.target) {
       if (!draft.value.images.includes(item.target))
@@ -534,7 +529,7 @@ onBeforeRouteLeave(() => {
       :title="isNew ? '新增商家' : '商家资料'"
       :description="
         isNew
-          ? '先保存店名与城市，再逐步完善资料。'
+          ? '资料均可后补，由人工决定是否对外展示。'
           : '资料、图片和标签统一保存草稿，确认后再更新对外展示。'
       "
       ><RouterLink class="button-link secondary" to="/platform/merchants">{{
@@ -550,20 +545,18 @@ onBeforeRouteLeave(() => {
           >{{ $pt("店名")
           }}<input
             v-model="newName"
-            required
             maxlength="120"
             :placeholder="$pt('填写门店名称')" /></label
         ><label
           >{{ $pt("城市")
           }}<input
             v-model="newCity"
-            required
             maxlength="80"
-            :placeholder="$pt('例如：北宁')"
+            :placeholder="$pt('留空表示所有城市')"
         /></label>
       </div>
       <p class="p-summary-note">
-        {{ $pt("草稿仅在平台后台保留。资料按行业清单补齐后，才能公开展示。") }}
+        {{ $pt("所有资料均为选填，保存草稿不会展示；是否公开由人工决定。") }}
       </p>
       <button :disabled="saving">
         {{ saving ? $pt("正在保存…") : $pt("保存草稿并继续") }}</button
@@ -775,7 +768,7 @@ onBeforeRouteLeave(() => {
           <p class="hint">
             {{
               $pt(
-                "单张源文件最多 20MB，自动优化清晰度与体积；服务器仅保存展示图和列表小图。更换图片会先进入草稿。",
+                "图片不设上传大小和张数上限，自动优化清晰度与体积；服务器仅保存展示图和列表小图。更换图片会先进入草稿。",
               )
             }}
           </p>
@@ -796,7 +789,7 @@ onBeforeRouteLeave(() => {
               }}</span
               ><input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 @change="addFiles($event, item.type)"
             /></label>
           </div>
@@ -822,7 +815,7 @@ onBeforeRouteLeave(() => {
               }}<input
                 type="file"
                 multiple
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 @change="addFiles($event, item.type)"
             /></label>
           </div>
@@ -882,7 +875,7 @@ onBeforeRouteLeave(() => {
                     >{{ $pt("替换")
                     }}<input
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
+                      accept="image/*"
                       :disabled="uploading"
                       @change="replaceImage($event, image)" /></label
                   ><button
@@ -997,15 +990,18 @@ onBeforeRouteLeave(() => {
           <p class="hint">
             {{
               $pt(
-                "公开资料须包含中越双语、联系信息、定位、封面、营业时间，以及当前行业要求的展示项目。已有商家仍保留现有展示，完善后再更新。",
+                "资料是否完整不影响发布。勾选后点击“保存并更新”即可公开；城市留空表示所有城市。",
               )
             }}
           </p>
-          <ul v-if="liveMissing.length" class="p-muted">
+          <details v-if="liveMissing.length" class="p-muted">
+            <summary>{{ $pt("可后补资料（不影响发布）") }}</summary>
+            <ul>
             <li v-for="field in liveMissing" :key="field">
-              {{ $pt("待完善：") }}{{ $pt(field) }}
+              {{ $pt(field) }}
             </li>
-          </ul>
+            </ul>
+          </details>
         </article>
       </div>
       <div class="p-sticky-actions">

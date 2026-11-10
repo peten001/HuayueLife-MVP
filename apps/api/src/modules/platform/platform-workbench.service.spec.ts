@@ -108,6 +108,23 @@ function harness() {
   };
 }
 describe("Platform workbench publication boundary", () => {
+  it("creates a hidden draft without requiring any profile fields", async () => {
+    const h=harness();
+    await h.service.createDraft();
+    expect(h.tx.merchant.create).toHaveBeenCalledWith({data:expect.objectContaining({nameZh:"未命名商家",city:"",province:"",status:"PENDING",isVisibleOnClient:false})});
+  });
+  it("publishes an incomplete profile to all cities only when manually selected", async () => {
+    const h=harness();h.merchant.status="PENDING";
+    const draft=await h.service.draft(1n);
+    for(const field of ["nameZh","nameVi","city","businessTypeId","contactName","contactPhone","addressZh","addressVi","coverUrl","descriptionZh","descriptionVi","latitude","longitude","openingHoursText"])draft.profile[field]="";
+    draft.profile.businessHours={};draft.profile.isVisibleOnClient=true;
+    draft.images=[];draft.signatureDishes=[];draft.serviceItems=[];
+    await expect(h.service.saveDraft(1n,draft,"admin",true)).resolves.toMatchObject({published:true});
+    expect(h.tx.merchant.update).toHaveBeenCalledWith({where:{id:1n},data:expect.objectContaining({nameVi:"",city:"",province:"",latitude:0,longitude:0,isVisibleOnClient:true,status:"ACTIVE",businessType:{disconnect:true}})});
+    draft.profile.isVisibleOnClient=false;
+    await h.service.saveDraft(1n,draft,"admin",true);
+    expect(h.tx.merchant.update).toHaveBeenLastCalledWith({where:{id:1n},data:expect.objectContaining({isVisibleOnClient:false})});
+  });
   it("allows name + city draft creation without exposing a merchant", async () => {
     const h = harness();
     await h.service.createDraft(" 店名 ", "北宁");
@@ -153,14 +170,12 @@ describe("Platform workbench publication boundary", () => {
     expect(h.tx.merchantSignatureDish.createMany).not.toHaveBeenCalled();
     expect(h.tx.merchantServiceItem.createMany).not.toHaveBeenCalled();
   });
-  it("validates bilingual content before any publication write", async () => {
+  it("lets the operator publish without translations", async () => {
     const h = harness();
     const draft = await h.service.draft(1n);
     draft.profile.nameVi = "";
-    await expect(h.service.saveDraft(1n, draft, "admin", true)).rejects.toThrow(
-      "越南文店名",
-    );
-    expect(h.tx.merchant.update).not.toHaveBeenCalled();
+    await expect(h.service.saveDraft(1n, draft, "admin", true)).resolves.toMatchObject({published:true});
+    expect(h.tx.merchant.update).toHaveBeenCalledWith({where:{id:1n},data:expect.objectContaining({nameVi:""})});
   });
   it("publishes fields, tag associations and photo associations together", async () => {
     const h = harness();
@@ -231,7 +246,7 @@ describe("Platform workbench publication boundary", () => {
     );
     expect(h.tx.merchantSignatureDish.update).not.toHaveBeenCalled();
   });
-  it("does not let independent signature entries satisfy a claimed merchant menu requirement", async () => {
+  it("allows a claimed merchant to be displayed before its menu is prepared", async () => {
     const h = harness();
     h.merchant.claimStatus = "CLAIMED";
     const draft = await h.service.draft(1n);
@@ -243,10 +258,7 @@ describe("Platform workbench publication boundary", () => {
         sortOrder: 0,
       },
     ];
-    await expect(h.service.saveDraft(1n, draft, "admin", true)).rejects.toThrow(
-      "菜单或菜品",
-    );
-    expect(h.tx.merchant.update).not.toHaveBeenCalled();
+    await expect(h.service.saveDraft(1n, draft, "admin", true)).resolves.toMatchObject({published:true});
   });
   it("preserves independent drafts after claiming without replacing public menu products", async () => {
     const h = harness();

@@ -103,6 +103,7 @@ function createService(rows: any[], platformOrderingEnabled = true, explore?: an
       row.status === where.status
       && row.isVisibleOnClient === where.isVisibleOnClient
       && (where.province === undefined || row.province === where.province)
+      && (!Array.isArray(where.OR) || where.OR.some((condition: {province:string}) => condition.province === row.province))
     )))
   ));
   const service = new PublicMerchantsService(
@@ -127,6 +128,12 @@ function createService(rows: any[], platformOrderingEnabled = true, explore?: an
 }
 
 describe('PublicMerchantsService automatic homepage recommendations', () => {
+  it.each(['北江','北宁'])('includes manually public merchants without a city when browsing %s',async(province)=>{
+    const {service,findMany}=createService([merchant(50,{province:'',city:'',nameVi:null,coverUrl:null,latitude:0,longitude:0})]);
+    const result=await service.nearby(Object.assign(new NearbyMerchantsQueryDto(),{province}));
+    expect(result.items.some(item=>String(item.id)==='50')).toBe(true);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({OR:[{province},{province:''}]})}));
+  });
   it('queries all active visible regional merchants, including coffee beyond page one and visible dish photos', async () => {
     const rows = Array.from({ length: 25 }, (_, i) => merchant(i + 1, { businessType: { id: 1n, code: 'CHINESE_RESTAURANT', nameZh: '中式正餐' }, coverUrl: '/dish.jpg', businessHours: OPEN_ALL_DAY }));
     rows.push(merchant(26, { businessType: { id: 2n, code: 'COFFEE_TEA', nameZh: '咖啡茶饮' }, coverUrl: '/coffee.jpg', businessHours: OPEN_ALL_DAY }));
@@ -135,7 +142,7 @@ describe('PublicMerchantsService automatic homepage recommendations', () => {
     const { service, findMany } = createService(rows, true, undefined, { ratingsForMerchants });
     const result = await service.homeRecommendations({ province: '北江' });
     expect(result.spotlights.map(item => item.merchant.id)).toEqual([25n, 26n]);
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', isVisibleOnClient: true, province: '北江' }, include: expect.objectContaining({ signatureDishes: expect.objectContaining({ where: { isVisible: true } }), images: expect.objectContaining({ where: { isVisible: true } }), promotionTags: expect.objectContaining({ where: { promotionTag: { enabled: true } } }) }) }));
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', isVisibleOnClient: true, OR: [{province:'北江'},{province:''}] }, include: expect.objectContaining({ signatureDishes: expect.objectContaining({ where: { isVisible: true } }), images: expect.objectContaining({ where: { isVisible: true } }), promotionTags: expect.objectContaining({ where: { promotionTag: { enabled: true } } }) }) }));
     expect(findMany.mock.calls[0][0].take).toBeUndefined();
     expect(ratingsForMerchants.mock.calls[0][0]).toHaveLength(26);
     expect(result.spotlights[0].rating).toEqual({ averageRating: 4.9, total: 10 });

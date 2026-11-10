@@ -21,15 +21,15 @@ const MERCHANT_STATUSES = ['PENDING', 'ACTIVE', 'DISABLED'] as const;
 export class CreateDisplayMerchantDto {
   @IsString()
   @MaxLength(120)
-  nameZh: string;
+  nameZh = '';
 
   @IsString()
   @MaxLength(120)
-  nameVi: string;
+  nameVi = '';
 
   @IsString()
   @MaxLength(120)
-  nameEn: string;
+  nameEn = '';
 
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
@@ -46,15 +46,15 @@ export class CreateDisplayMerchantDto {
 
   @IsString()
   @MaxLength(32)
-  contactPhone: string;
+  contactPhone = '';
 
   @IsString()
   @MaxLength(64)
-  contactName: string;
+  contactName = '';
 
   @IsString()
   @MaxLength(80)
-  province: string;
+  province = '';
 
   @IsOptional()
   @IsString()
@@ -68,7 +68,7 @@ export class CreateDisplayMerchantDto {
 
   @IsString()
   @MaxLength(255)
-  addressZh: string;
+  addressZh = '';
 
   @IsOptional()
   @IsString()
@@ -83,12 +83,12 @@ export class CreateDisplayMerchantDto {
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-90)
   @Max(90)
-  latitude: number;
+  latitude = 0;
 
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-180)
   @Max(180)
-  longitude: number;
+  longitude = 0;
 
   @IsOptional()
   @IsString()

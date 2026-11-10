@@ -51,7 +51,7 @@ export async function exploreRequest<T = unknown>(method: 'get' | 'put' | 'post'
 }
 
 platformHttp.interceptors.request.use((config) => {
-  if (config.data instanceof FormData) config.timeout = 120000;
+  if (config.data instanceof FormData) config.timeout = 0;
   else if (/\/(publish|bulk|import-confirm)$/.test(config.url || '')) config.timeout = 60000;
   const token = getPlatformToken();
   if (token) {

@@ -8,7 +8,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { IsString, MaxLength } from "class-validator";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { IdParamDto } from "../../common/dto/id-param.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -20,8 +20,8 @@ import {
   PlatformWorkbenchService,
 } from "./platform-workbench.service";
 class NewDraftDto {
-  @IsString() @MaxLength(120) nameZh: string;
-  @IsString() @MaxLength(80) city: string;
+  @IsOptional() @IsString() @MaxLength(120) nameZh?: string;
+  @IsOptional() @IsString() @MaxLength(80) city?: string;
 }
 @Controller("platform/workbench")
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
